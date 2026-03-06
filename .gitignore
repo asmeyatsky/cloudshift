@@ -20,4 +20,8 @@ node_modules/
 .mypy_cache/
 *.whl
 ui/dist/
+ui/*.tsbuildinfo
+ui/vite.config.js
+ui/vite.config.d.ts
 vscode-extension/out/
+*.dSYM/
