@@ -1,0 +1,65 @@
+id: s3-client-init-to-gcs-client-py
+name: "S3 Client Init to GCS Client (Python)"
+description: >
+  Transforms boto3 S3 client or resource initialization to
+  google.cloud.storage.Client initialization. Handles both
+  boto3.client('s3') and boto3.resource('s3') patterns.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "import boto3"
+    - "from boto3"
+  client_names:
+    - "boto3.client('s3')"
+    - "boto3.resource('s3')"
+    - 'boto3.client("s3")'
+    - 'boto3.resource("s3")'
+  text_patterns:
+    - "s3_client"
+    - "s3_resource"
+    - "s3 ="
+transform:
+  replacement_template: |
+    from google.cloud import storage
+
+    storage_client = storage.Client()
+  import_additions:
+    - "from google.cloud import storage"
+  import_removals:
+    - "import boto3"
+  notes: >
+    google.cloud.storage.Client uses Application Default Credentials (ADC) by
+    default. If the original code passes explicit AWS credentials or region,
+    you may need to set GOOGLE_APPLICATION_CREDENTIALS or pass a project= parameter.
+    boto3.resource('s3') has a higher-level API; the GCS client is closer to the
+    boto3.client('s3') low-level API but with some resource-like conveniences.
+base_confidence: 0.92
+tags:
+  - s3
+  - cloud-storage
+  - python
+  - storage
+  - client-init
+  - low-complexity
+examples:
+  - input: |
+      import boto3
+
+      s3_client = boto3.client('s3', region_name='us-east-1')
+    output: |
+      from google.cloud import storage
+
+      storage_client = storage.Client()
+  - input: |
+      import boto3
+
+      s3 = boto3.resource('s3')
+    output: |
+      from google.cloud import storage
+
+      storage_client = storage.Client()

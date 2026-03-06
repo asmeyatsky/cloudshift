@@ -1,0 +1,72 @@
+id: azure-blob-upload-to-gcs-upload-py
+name: "Azure Blob upload_blob to GCS upload_from_string (Python)"
+description: >
+  Transforms Azure Blob Storage upload_blob calls to GCS
+  blob.upload_from_string or blob.upload_from_file. Maps container/blob name
+  patterns to bucket/blob patterns.
+source_provider: azure
+target_provider: gcp
+source_service: blob-storage
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "upload_blob"
+    - "upload_blob_from_url"
+  text_patterns:
+    - "container_client"
+    - "blob_client"
+    - "upload_blob"
+    - "overwrite="
+    - "content_settings"
+transform:
+  replacement_template: |
+    bucket = storage_client.bucket("{{bucket_name}}")
+    blob = bucket.blob("{{blob_name}}")
+    blob.upload_from_string({{data}}, content_type="{{content_type}}")
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure upload_blob(data, overwrite=True) maps to GCS blob.upload_from_string(data).
+    GCS always overwrites by default (no overwrite parameter needed).
+    Azure ContentSettings(content_type=...) maps to GCS content_type parameter.
+    Azure upload_blob with BlobType.APPEND maps to GCS compose() operations
+    (GCS does not have native append blobs).
+    Azure page blobs have no direct GCS equivalent.
+    For large files, Azure uses upload_blob with max_concurrency;
+    GCS handles multipart uploads automatically.
+base_confidence: 0.88
+tags:
+  - azure-blob
+  - cloud-storage
+  - python
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      from azure.storage.blob import ContentSettings
+
+      container_client = blob_service.get_container_client("my-container")
+      container_client.upload_blob(
+          name="data/file.json",
+          data=json.dumps(data),
+          overwrite=True,
+          content_settings=ContentSettings(content_type="application/json")
+      )
+    output: |
+      bucket = storage_client.bucket("my-container")
+      blob = bucket.blob("data/file.json")
+      blob.upload_from_string(json.dumps(data), content_type="application/json")
+  - input: |
+      blob_client = blob_service.get_blob_client(
+          container="uploads",
+          blob="document.pdf"
+      )
+      with open("/tmp/document.pdf", "rb") as f:
+          blob_client.upload_blob(f, overwrite=True)
+    output: |
+      bucket = storage_client.bucket("uploads")
+      blob = bucket.blob("document.pdf")
+      blob.upload_from_filename("/tmp/document.pdf")

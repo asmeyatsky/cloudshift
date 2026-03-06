@@ -1,0 +1,64 @@
+id: s3-list-objects-to-gcs-list-blobs-py
+name: "S3 list_objects to GCS list_blobs (Python)"
+description: >
+  Transforms S3 list_objects_v2 or list_objects calls to GCS
+  storage_client.list_blobs. Maps Bucket to bucket_or_name, Prefix to prefix,
+  and handles pagination differences.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "list_objects_v2"
+    - "list_objects"
+  text_patterns:
+    - "Bucket="
+    - "Prefix="
+    - "['Contents']"
+transform:
+  replacement_template: |
+    blobs = storage_client.list_blobs("{{bucket_name}}", prefix="{{prefix}}")
+    for blob in blobs:
+        print(blob.name)
+  import_additions: []
+  import_removals: []
+  notes: >
+    S3 list_objects_v2 returns paginated results with a max of 1000 keys per
+    response; you must use ContinuationToken to paginate. GCS list_blobs returns
+    an iterator that handles pagination automatically. S3 Delimiter parameter
+    maps to the delimiter parameter in list_blobs. The S3 response structure
+    (Contents, CommonPrefixes) differs from GCS blob objects.
+    For listing prefixes (virtual directories), use delimiter='/'.
+base_confidence: 0.88
+tags:
+  - s3
+  - cloud-storage
+  - python
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      response = s3_client.list_objects_v2(
+          Bucket='my-bucket',
+          Prefix='data/',
+          MaxKeys=100
+      )
+      for obj in response.get('Contents', []):
+          print(obj['Key'], obj['Size'])
+    output: |
+      blobs = storage_client.list_blobs("my-bucket", prefix="data/", max_results=100)
+      for blob in blobs:
+          print(blob.name, blob.size)
+  - input: |
+      paginator = s3_client.get_paginator('list_objects_v2')
+      for page in paginator.paginate(Bucket='my-bucket', Prefix='logs/'):
+          for obj in page.get('Contents', []):
+              print(obj['Key'])
+    output: |
+      blobs = storage_client.list_blobs("my-bucket", prefix="logs/")
+      for blob in blobs:
+          print(blob.name)

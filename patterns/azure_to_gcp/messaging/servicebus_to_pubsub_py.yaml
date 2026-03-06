@@ -1,0 +1,112 @@
+id: azure-servicebus-to-pubsub-py
+name: "Azure Service Bus to Pub/Sub (Python)"
+description: >
+  Transforms azure.servicebus ServiceBusClient send/receive operations to
+  google.cloud.pubsub PublisherClient/SubscriberClient operations.
+  Maps Service Bus queues/topics to Pub/Sub topics/subscriptions.
+source_provider: azure
+target_provider: gcp
+source_service: service-bus
+target_service: pubsub
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "from azure.servicebus import ServiceBusClient"
+    - "from azure.servicebus import ServiceBusMessage"
+    - "from azure.servicebus import ServiceBusSender"
+    - "from azure.servicebus import ServiceBusReceiver"
+  client_names:
+    - "ServiceBusClient.from_connection_string"
+    - "ServiceBusClient("
+  text_patterns:
+    - "ServiceBusClient"
+    - "ServiceBusMessage"
+    - "get_queue_sender"
+    - "get_queue_receiver"
+    - "get_topic_sender"
+    - "get_subscription_receiver"
+transform:
+  replacement_template: |
+    from google.cloud import pubsub_v1
+
+    publisher = pubsub_v1.PublisherClient()
+    subscriber = pubsub_v1.SubscriberClient()
+  import_additions:
+    - "from google.cloud import pubsub_v1"
+  import_removals:
+    - "from azure.servicebus import ServiceBusClient"
+    - "from azure.servicebus import ServiceBusMessage"
+  notes: >
+    Service Bus queues map to Pub/Sub topic + subscription (point-to-point).
+    Service Bus topics + subscriptions map to Pub/Sub topic + subscriptions (pub-sub).
+    Service Bus sessions (ordered processing) map to Pub/Sub ordering keys.
+    Service Bus dead-letter queue maps to Pub/Sub dead-letter topic.
+    Service Bus scheduled messages map to Cloud Tasks scheduled delivery.
+    Service Bus transactions have no direct Pub/Sub equivalent.
+    Service Bus message properties map to Pub/Sub message attributes.
+    Service Bus peek_messages has no direct equivalent (Pub/Sub is pull or push only).
+base_confidence: 0.78
+tags:
+  - service-bus
+  - pubsub
+  - python
+  - messaging
+  - client-init
+  - medium-complexity
+examples:
+  - input: |
+      from azure.servicebus import ServiceBusClient, ServiceBusMessage
+
+      conn_str = os.environ["SERVICEBUS_CONNECTION_STRING"]
+      servicebus_client = ServiceBusClient.from_connection_string(conn_str)
+
+      # Send message
+      with servicebus_client.get_queue_sender("orders") as sender:
+          message = ServiceBusMessage(
+              json.dumps({"order_id": "12345"}),
+              content_type="application/json",
+              subject="OrderCreated",
+              application_properties={"priority": "high"}
+          )
+          sender.send_messages(message)
+
+      # Receive messages
+      with servicebus_client.get_queue_receiver("orders") as receiver:
+          messages = receiver.receive_messages(max_message_count=10, max_wait_time=30)
+          for msg in messages:
+              body = json.loads(str(msg))
+              process_order(body)
+              receiver.complete_message(msg)
+    output: |
+      from google.cloud import pubsub_v1
+      import json
+
+      publisher = pubsub_v1.PublisherClient()
+      subscriber = pubsub_v1.SubscriberClient()
+
+      # Send message
+      topic_path = publisher.topic_path("my-project", "orders")
+      future = publisher.publish(
+          topic_path,
+          data=json.dumps({"order_id": "12345"}).encode("utf-8"),
+          content_type="application/json",
+          subject="OrderCreated",
+          priority="high"
+      )
+      future.result()
+
+      # Receive messages
+      subscription_path = subscriber.subscription_path("my-project", "orders-sub")
+      response = subscriber.pull(
+          request={"subscription": subscription_path, "max_messages": 10}
+      )
+      for msg in response.received_messages:
+          body = json.loads(msg.message.data.decode("utf-8"))
+          process_order(body)
+
+      ack_ids = [msg.ack_id for msg in response.received_messages]
+      if ack_ids:
+          subscriber.acknowledge(
+              request={"subscription": subscription_path, "ack_ids": ack_ids}
+          )

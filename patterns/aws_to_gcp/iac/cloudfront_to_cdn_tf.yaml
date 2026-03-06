@@ -1,0 +1,169 @@
+id: cloudfront-to-cloud-cdn-tf
+name: "CloudFront Distribution to Cloud CDN (Terraform)"
+description: >
+  Transforms aws_cloudfront_distribution to Cloud CDN via
+  google_compute_backend_bucket or google_compute_backend_service with CDN
+  enabled, plus google_compute_url_map and google_compute_global_forwarding_rule.
+  CloudFront is a standalone CDN; GCP Cloud CDN is enabled on load balancer backends.
+source_provider: aws
+target_provider: gcp
+source_service: cloudfront
+target_service: cloud-cdn
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_cloudfront_distribution"
+    - "aws_cloudfront_origin_access_identity"
+    - "aws_cloudfront_cache_policy"
+  text_patterns:
+    - "origin"
+    - "default_cache_behavior"
+    - "viewer_protocol_policy"
+transform:
+  replacement_template: |
+    resource "google_compute_backend_bucket" "{{resource_name}}" {
+      name        = "{{backend_name}}"
+      bucket_name = google_storage_bucket.{{bucket_name}}.name
+      enable_cdn  = true
+
+      cdn_policy {
+        cache_mode                   = "CACHE_ALL_STATIC"
+        default_ttl                  = {{default_ttl}}
+        max_ttl                      = {{max_ttl}}
+        signed_url_cache_max_age_sec = 3600
+      }
+    }
+
+    resource "google_compute_url_map" "{{resource_name}}" {
+      name            = "{{url_map_name}}"
+      default_service = google_compute_backend_bucket.{{resource_name}}.id
+    }
+
+    resource "google_compute_target_https_proxy" "{{resource_name}}" {
+      name             = "{{proxy_name}}"
+      url_map          = google_compute_url_map.{{resource_name}}.id
+      ssl_certificates = [google_compute_managed_ssl_certificate.{{cert_name}}.id]
+    }
+
+    resource "google_compute_global_forwarding_rule" "{{resource_name}}" {
+      name       = "{{forwarding_rule_name}}"
+      target     = google_compute_target_https_proxy.{{resource_name}}.id
+      port_range = "443"
+      ip_address = google_compute_global_address.{{ip_name}}.address
+    }
+
+    resource "google_compute_global_address" "{{ip_name}}" {
+      name = "{{ip_name}}"
+    }
+
+    resource "google_compute_managed_ssl_certificate" "{{cert_name}}" {
+      name = "{{cert_name}}"
+      managed {
+        domains = [{{domains}}]
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    CloudFront is a standalone service; Cloud CDN requires a load balancer stack
+    (backend + URL map + proxy + forwarding rule). This means more resources.
+    CloudFront behaviors map to URL map path rules.
+    CloudFront origin access identity (OAI) for S3 maps to signed URLs or
+    IAM-based access on the GCS bucket.
+    CloudFront Lambda@Edge maps to Cloud CDN does not have edge compute;
+    use Cloud Functions or Cloud Run for similar functionality.
+    CloudFront ACM certificates map to google_compute_managed_ssl_certificate.
+    CloudFront geo-restriction maps to Cloud Armor policies.
+base_confidence: 0.65
+tags:
+  - cloudfront
+  - cloud-cdn
+  - terraform
+  - networking
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_cloudfront_distribution" "website" {
+        enabled             = true
+        default_root_object = "index.html"
+        aliases             = ["www.example.com"]
+
+        origin {
+          domain_name = aws_s3_bucket.website.bucket_regional_domain_name
+          origin_id   = "S3-website"
+
+          s3_origin_config {
+            origin_access_identity = aws_cloudfront_origin_access_identity.main.cloudfront_access_identity_path
+          }
+        }
+
+        default_cache_behavior {
+          target_origin_id       = "S3-website"
+          viewer_protocol_policy = "redirect-to-https"
+          allowed_methods        = ["GET", "HEAD"]
+          cached_methods         = ["GET", "HEAD"]
+          default_ttl            = 3600
+          max_ttl                = 86400
+
+          forwarded_values {
+            query_string = false
+            cookies {
+              forward = "none"
+            }
+          }
+        }
+
+        viewer_certificate {
+          acm_certificate_arn = aws_acm_certificate.main.arn
+          ssl_support_method  = "sni-only"
+        }
+
+        restrictions {
+          geo_restriction {
+            restriction_type = "none"
+          }
+        }
+      }
+    output: |
+      resource "google_compute_backend_bucket" "website" {
+        name        = "website-backend"
+        bucket_name = google_storage_bucket.website.name
+        enable_cdn  = true
+
+        cdn_policy {
+          cache_mode  = "CACHE_ALL_STATIC"
+          default_ttl = 3600
+          max_ttl     = 86400
+        }
+      }
+
+      resource "google_compute_url_map" "website" {
+        name            = "website-url-map"
+        default_service = google_compute_backend_bucket.website.id
+      }
+
+      resource "google_compute_target_https_proxy" "website" {
+        name             = "website-https-proxy"
+        url_map          = google_compute_url_map.website.id
+        ssl_certificates = [google_compute_managed_ssl_certificate.website.id]
+      }
+
+      resource "google_compute_global_forwarding_rule" "website" {
+        name       = "website-forwarding-rule"
+        target     = google_compute_target_https_proxy.website.id
+        port_range = "443"
+        ip_address = google_compute_global_address.website.address
+      }
+
+      resource "google_compute_global_address" "website" {
+        name = "website-ip"
+      }
+
+      resource "google_compute_managed_ssl_certificate" "website" {
+        name = "website-cert"
+        managed {
+          domains = ["www.example.com"]
+        }
+      }

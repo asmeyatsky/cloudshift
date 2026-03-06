@@ -1,0 +1,149 @@
+id: api-gateway-to-apigee-tf
+name: "AWS API Gateway to GCP API Gateway (Terraform)"
+description: >
+  Transforms aws_api_gateway_rest_api and aws_apigatewayv2_api to
+  google_api_gateway_api, google_api_gateway_api_config, and
+  google_api_gateway_gateway. Maps routes, methods, integrations, and
+  authorizers to GCP API Gateway OpenAPI spec configuration.
+source_provider: aws
+target_provider: gcp
+source_service: api-gateway
+target_service: api-gateway
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_api_gateway_rest_api"
+    - "aws_api_gateway_resource"
+    - "aws_api_gateway_method"
+    - "aws_api_gateway_integration"
+    - "aws_apigatewayv2_api"
+    - "aws_apigatewayv2_route"
+  text_patterns:
+    - "api_gateway"
+    - "integration"
+    - "authorizer"
+    - "stage"
+transform:
+  replacement_template: |
+    resource "google_api_gateway_api" "{{resource_name}}" {
+      provider = google-beta
+      api_id   = "{{api_id}}"
+      project  = var.project_id
+    }
+
+    resource "google_api_gateway_api_config" "{{resource_name}}" {
+      provider      = google-beta
+      api           = google_api_gateway_api.{{resource_name}}.api_id
+      api_config_id = "{{config_id}}"
+      project       = var.project_id
+
+      openapi_documents {
+        document {
+          path     = "openapi.yaml"
+          contents = base64encode(file("openapi.yaml"))
+        }
+      }
+
+      gateway_config {
+        backend_config {
+          google_service_account = "{{service_account_email}}"
+        }
+      }
+    }
+
+    resource "google_api_gateway_gateway" "{{resource_name}}" {
+      provider   = google-beta
+      api_config = google_api_gateway_api_config.{{resource_name}}.id
+      gateway_id = "{{gateway_id}}"
+      region     = "{{region}}"
+      project    = var.project_id
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    AWS API Gateway uses Terraform resources for routes/methods/integrations;
+    GCP API Gateway uses an OpenAPI spec document. This is a significant
+    structural change — the many AWS resources collapse into one OpenAPI YAML file.
+    AWS Lambda integrations map to Cloud Functions or Cloud Run backends in the spec.
+    AWS Cognito authorizers map to Firebase Auth or Identity Platform JWT validation.
+    AWS API keys/usage plans map to API Gateway API key management.
+    For more advanced API management (throttling, analytics, developer portal),
+    consider Apigee instead of GCP API Gateway.
+    AWS HTTP API (apigatewayv2) maps more naturally to GCP API Gateway than REST API.
+base_confidence: 0.60
+tags:
+  - api-gateway
+  - terraform
+  - networking
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_api_gateway_rest_api" "main" {
+        name        = "my-api"
+        description = "Main API"
+      }
+
+      resource "aws_api_gateway_resource" "users" {
+        rest_api_id = aws_api_gateway_rest_api.main.id
+        parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+        path_part   = "users"
+      }
+
+      resource "aws_api_gateway_method" "users_get" {
+        rest_api_id   = aws_api_gateway_rest_api.main.id
+        resource_id   = aws_api_gateway_resource.users.id
+        http_method   = "GET"
+        authorization = "NONE"
+      }
+
+      resource "aws_api_gateway_integration" "users_get" {
+        rest_api_id             = aws_api_gateway_rest_api.main.id
+        resource_id             = aws_api_gateway_resource.users.id
+        http_method             = aws_api_gateway_method.users_get.http_method
+        integration_http_method = "POST"
+        type                    = "AWS_PROXY"
+        uri                     = aws_lambda_function.users.invoke_arn
+      }
+    output: |
+      resource "google_api_gateway_api" "main" {
+        provider = google-beta
+        api_id   = "my-api"
+        project  = var.project_id
+      }
+
+      resource "google_api_gateway_api_config" "main" {
+        provider      = google-beta
+        api           = google_api_gateway_api.main.api_id
+        api_config_id = "my-api-config"
+        project       = var.project_id
+
+        openapi_documents {
+          document {
+            path     = "openapi.yaml"
+            contents = base64encode(file("openapi.yaml"))
+          }
+        }
+
+        gateway_config {
+          backend_config {
+            google_service_account = google_service_account.api.email
+          }
+        }
+      }
+
+      # openapi.yaml should contain:
+      # paths:
+      #   /users:
+      #     get:
+      #       x-google-backend:
+      #         address: https://<cloud-function-url>
+
+      resource "google_api_gateway_gateway" "main" {
+        provider   = google-beta
+        api_config = google_api_gateway_api_config.main.id
+        gateway_id = "my-api-gateway"
+        region     = "us-central1"
+        project    = var.project_id
+      }

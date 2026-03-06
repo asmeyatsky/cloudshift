@@ -1,0 +1,60 @@
+id: dynamodb-client-init-to-firestore-py
+name: "DynamoDB Client Init to Firestore Client (Python)"
+description: >
+  Transforms boto3 DynamoDB client or resource initialization to
+  google.cloud.firestore.Client. DynamoDB is a key-value/document database
+  while Firestore is a document database — both are schemaless NoSQL stores
+  but have different data models and query capabilities.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "import boto3"
+    - "from boto3.dynamodb"
+  client_names:
+    - "boto3.client('dynamodb')"
+    - "boto3.resource('dynamodb')"
+    - 'boto3.client("dynamodb")'
+    - 'boto3.resource("dynamodb")'
+  text_patterns:
+    - "dynamodb"
+    - "Table("
+transform:
+  replacement_template: |
+    from google.cloud import firestore
+
+    db = firestore.Client()
+  import_additions:
+    - "from google.cloud import firestore"
+  import_removals:
+    - "import boto3"
+  notes: >
+    DynamoDB tables map to Firestore collections. DynamoDB items map to
+    Firestore documents. The partition key becomes the document ID.
+    Sort keys require restructuring — use subcollections or composite document IDs.
+    DynamoDB's provisioned/on-demand capacity has no direct equivalent;
+    Firestore uses automatic scaling.
+    For high-throughput key-value workloads, consider Cloud Bigtable instead.
+base_confidence: 0.80
+tags:
+  - dynamodb
+  - firestore
+  - python
+  - database
+  - client-init
+  - medium-complexity
+examples:
+  - input: |
+      import boto3
+
+      dynamodb = boto3.resource('dynamodb')
+      table = dynamodb.Table('users')
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      collection = db.collection("users")

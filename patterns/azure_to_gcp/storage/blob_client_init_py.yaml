@@ -1,0 +1,78 @@
+id: azure-blob-client-to-gcs-client-py
+name: "Azure Blob Client to GCS Client (Python)"
+description: >
+  Transforms azure.storage.blob BlobServiceClient initialization to
+  google.cloud.storage.Client initialization. Maps connection string
+  or account URL based auth to GCP Application Default Credentials.
+source_provider: azure
+target_provider: gcp
+source_service: blob-storage
+target_service: cloud-storage
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "from azure.storage.blob import BlobServiceClient"
+    - "from azure.storage.blob import ContainerClient"
+    - "from azure.storage.blob import BlobClient"
+    - "import azure.storage.blob"
+  client_names:
+    - "BlobServiceClient.from_connection_string"
+    - "BlobServiceClient("
+    - "ContainerClient.from_connection_string"
+  text_patterns:
+    - "BlobServiceClient"
+    - "connection_string"
+    - "account_url"
+transform:
+  replacement_template: |
+    from google.cloud import storage
+
+    storage_client = storage.Client()
+  import_additions:
+    - "from google.cloud import storage"
+  import_removals:
+    - "from azure.storage.blob import BlobServiceClient"
+    - "from azure.storage.blob import ContainerClient"
+    - "from azure.storage.blob import BlobClient"
+  notes: >
+    Azure Blob Storage uses connection strings or account_url + credential;
+    GCS uses Application Default Credentials (ADC).
+    Azure storage account maps to GCP project (buckets are global in GCS).
+    Azure containers map to GCS buckets.
+    Azure BlobServiceClient.from_connection_string maps to storage.Client().
+    Azure DefaultAzureCredential maps to google.auth.default().
+base_confidence: 0.90
+tags:
+  - azure-blob
+  - cloud-storage
+  - python
+  - storage
+  - client-init
+  - low-complexity
+examples:
+  - input: |
+      from azure.storage.blob import BlobServiceClient
+      from azure.identity import DefaultAzureCredential
+
+      credential = DefaultAzureCredential()
+      blob_service = BlobServiceClient(
+          account_url="https://mystorageaccount.blob.core.windows.net",
+          credential=credential
+      )
+      container_client = blob_service.get_container_client("my-container")
+    output: |
+      from google.cloud import storage
+
+      storage_client = storage.Client()
+      bucket = storage_client.bucket("my-container")
+  - input: |
+      from azure.storage.blob import BlobServiceClient
+
+      conn_str = os.environ["AZURE_STORAGE_CONNECTION_STRING"]
+      blob_service = BlobServiceClient.from_connection_string(conn_str)
+    output: |
+      from google.cloud import storage
+
+      # GCP uses Application Default Credentials; no connection string needed
+      storage_client = storage.Client()

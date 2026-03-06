@@ -1,0 +1,120 @@
+id: iam-policy-to-gcp-iam-binding-tf
+name: "AWS IAM Policy to GCP IAM Binding (Terraform)"
+description: >
+  Transforms aws_iam_policy with inline policy document to
+  google_project_iam_binding or google_project_iam_custom_role.
+  AWS uses resource-based JSON policy documents; GCP uses predefined roles
+  or custom roles with permission lists.
+source_provider: aws
+target_provider: gcp
+source_service: iam
+target_service: iam
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_iam_policy"
+    - "aws_iam_policy_document"
+  text_patterns:
+    - "policy"
+    - "Statement"
+    - "Action"
+    - "Resource"
+    - "Effect"
+transform:
+  replacement_template: |
+    resource "google_project_iam_custom_role" "{{resource_name}}" {
+      role_id     = "{{role_id}}"
+      title       = "{{title}}"
+      description = "{{description}}"
+      project     = var.project_id
+      permissions = [
+        {{permissions}}
+      ]
+    }
+
+    resource "google_project_iam_binding" "{{binding_name}}" {
+      project = var.project_id
+      role    = google_project_iam_custom_role.{{resource_name}}.id
+
+      members = [
+        "serviceAccount:{{service_account_email}}",
+      ]
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    AWS IAM actions map to GCP permissions. Common mappings:
+      - s3:GetObject -> storage.objects.get
+      - s3:PutObject -> storage.objects.create
+      - s3:ListBucket -> storage.objects.list
+      - dynamodb:GetItem -> datastore.entities.get
+      - sqs:SendMessage -> pubsub.topics.publish
+      - sqs:ReceiveMessage -> pubsub.subscriptions.consume
+    AWS resource ARNs have no direct GCP equivalent (GCP uses project/resource
+    scoping via conditions). AWS Deny statements map to GCP deny policies
+    (IAM deny policies are a separate API). Prefer using predefined GCP roles
+    over custom roles when possible.
+base_confidence: 0.65
+tags:
+  - iam
+  - policy
+  - terraform
+  - security
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      data "aws_iam_policy_document" "s3_access" {
+        statement {
+          sid    = "AllowS3Read"
+          effect = "Allow"
+          actions = [
+            "s3:GetObject",
+            "s3:ListBucket"
+          ]
+          resources = [
+            "arn:aws:s3:::my-bucket",
+            "arn:aws:s3:::my-bucket/*"
+          ]
+        }
+
+        statement {
+          sid    = "AllowS3Write"
+          effect = "Allow"
+          actions = [
+            "s3:PutObject",
+            "s3:DeleteObject"
+          ]
+          resources = [
+            "arn:aws:s3:::my-bucket/uploads/*"
+          ]
+        }
+      }
+
+      resource "aws_iam_policy" "s3_access" {
+        name   = "s3-access-policy"
+        policy = data.aws_iam_policy_document.s3_access.json
+      }
+    output: |
+      resource "google_project_iam_custom_role" "storage_access" {
+        role_id     = "storageAccess"
+        title       = "Storage Access"
+        description = "Custom role for Cloud Storage read/write access"
+        project     = var.project_id
+        permissions = [
+          "storage.objects.get",
+          "storage.objects.list",
+          "storage.objects.create",
+          "storage.objects.delete",
+        ]
+      }
+
+      resource "google_project_iam_binding" "storage_access" {
+        project = var.project_id
+        role    = google_project_iam_custom_role.storage_access.id
+
+        members = [
+          "serviceAccount:${google_service_account.app.email}",
+        ]
+      }

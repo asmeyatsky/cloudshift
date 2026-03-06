@@ -1,0 +1,190 @@
+id: aks-to-gke-tf
+name: "AKS Cluster to GKE (Terraform)"
+description: >
+  Transforms azurerm_kubernetes_cluster to google_container_cluster and
+  google_container_node_pool. Maps node pool configuration, networking,
+  RBAC settings, and managed identity to GCP equivalents.
+source_provider: azure
+target_provider: gcp
+source_service: aks
+target_service: gke
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_kubernetes_cluster"
+    - "azurerm_kubernetes_cluster_node_pool"
+  text_patterns:
+    - "default_node_pool"
+    - "vm_size"
+    - "node_count"
+    - "kubernetes_version"
+    - "identity"
+transform:
+  replacement_template: |
+    resource "google_container_cluster" "{{resource_name}}" {
+      name     = "{{cluster_name}}"
+      location = "{{region}}"
+      project  = var.project_id
+
+      remove_default_node_pool = true
+      initial_node_count       = 1
+
+      min_master_version = "{{k8s_version}}"
+
+      network    = "{{network}}"
+      subnetwork = "{{subnetwork}}"
+
+      ip_allocation_policy {
+        cluster_secondary_range_name  = "pods"
+        services_secondary_range_name = "services"
+      }
+
+      private_cluster_config {
+        enable_private_nodes    = true
+        enable_private_endpoint = false
+        master_ipv4_cidr_block  = "172.16.0.0/28"
+      }
+
+      workload_identity_config {
+        workload_pool = "{{project_id}}.svc.id.goog"
+      }
+
+      release_channel {
+        channel = "{{release_channel}}"
+      }
+    }
+
+    resource "google_container_node_pool" "{{node_pool_name}}" {
+      name       = "{{node_pool_name}}"
+      cluster    = google_container_cluster.{{resource_name}}.id
+      location   = "{{region}}"
+
+      autoscaling {
+        min_node_count = {{min_count}}
+        max_node_count = {{max_count}}
+      }
+
+      node_config {
+        machine_type = "{{machine_type}}"
+        disk_size_gb = {{disk_size}}
+        disk_type    = "pd-balanced"
+
+        oauth_scopes = [
+          "https://www.googleapis.com/auth/cloud-platform"
+        ]
+
+        labels = {
+          {{labels}}
+        }
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure VM size to GCP machine type mapping:
+      - Standard_DS2_v2 -> n2-standard-2
+      - Standard_D4s_v3 -> n2-standard-4
+      - Standard_D8s_v3 -> n2-standard-8
+      - Standard_E4s_v3 -> n2-highmem-4
+    AKS system-assigned managed identity maps to GKE Workload Identity.
+    AKS Azure CNI maps to GKE VPC-native (ip_allocation_policy).
+    AKS kubenet maps to GKE routes-based (not recommended).
+    AKS auto_scaler_profile maps to GKE cluster autoscaler settings.
+    AKS resource_group has no direct GCP equivalent (use project).
+    AKS RBAC with Azure AD maps to GKE RBAC with Google Groups.
+base_confidence: 0.72
+tags:
+  - aks
+  - gke
+  - terraform
+  - compute
+  - kubernetes
+  - high-complexity
+examples:
+  - input: |
+      resource "azurerm_kubernetes_cluster" "main" {
+        name                = "production-aks"
+        location            = azurerm_resource_group.main.location
+        resource_group_name = azurerm_resource_group.main.name
+        dns_prefix          = "prod"
+        kubernetes_version  = "1.28"
+
+        default_node_pool {
+          name                = "system"
+          node_count          = 3
+          vm_size             = "Standard_D4s_v3"
+          os_disk_size_gb     = 100
+          enable_auto_scaling = true
+          min_count           = 2
+          max_count           = 10
+        }
+
+        identity {
+          type = "SystemAssigned"
+        }
+
+        network_profile {
+          network_plugin = "azure"
+          network_policy = "calico"
+        }
+
+        tags = {
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_container_cluster" "main" {
+        name     = "production-gke"
+        location = "us-central1"
+        project  = var.project_id
+
+        remove_default_node_pool = true
+        initial_node_count       = 1
+
+        min_master_version = "1.28"
+
+        network    = google_compute_network.main.id
+        subnetwork = google_compute_subnetwork.main.id
+
+        ip_allocation_policy {
+          cluster_secondary_range_name  = "pods"
+          services_secondary_range_name = "services"
+        }
+
+        private_cluster_config {
+          enable_private_nodes    = true
+          enable_private_endpoint = false
+          master_ipv4_cidr_block  = "172.16.0.0/28"
+        }
+
+        workload_identity_config {
+          workload_pool = "${var.project_id}.svc.id.goog"
+        }
+
+        network_policy {
+          enabled  = true
+          provider = "CALICO"
+        }
+      }
+
+      resource "google_container_node_pool" "system" {
+        name     = "system"
+        cluster  = google_container_cluster.main.id
+        location = "us-central1"
+
+        autoscaling {
+          min_node_count = 2
+          max_node_count = 10
+        }
+
+        node_config {
+          machine_type = "n2-standard-4"
+          disk_size_gb = 100
+          disk_type    = "pd-balanced"
+
+          oauth_scopes = [
+            "https://www.googleapis.com/auth/cloud-platform"
+          ]
+        }
+      }

@@ -1,0 +1,104 @@
+id: cosmosdb-client-to-firestore-py
+name: "CosmosDB Client to Firestore Client (Python)"
+description: >
+  Transforms azure.cosmos CosmosClient initialization and CRUD operations
+  to google.cloud.firestore.Client. Maps CosmosDB databases/containers
+  to Firestore collections, and item operations to document operations.
+source_provider: azure
+target_provider: gcp
+source_service: cosmosdb
+target_service: firestore
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "from azure.cosmos import CosmosClient"
+    - "from azure.cosmos import exceptions"
+    - "import azure.cosmos"
+  client_names:
+    - "CosmosClient("
+    - "CosmosClient.from_connection_string"
+  text_patterns:
+    - "CosmosClient"
+    - "get_database_client"
+    - "get_container_client"
+    - "cosmos_endpoint"
+transform:
+  replacement_template: |
+    from google.cloud import firestore
+
+    db = firestore.Client()
+  import_additions:
+    - "from google.cloud import firestore"
+  import_removals:
+    - "from azure.cosmos import CosmosClient"
+    - "from azure.cosmos import exceptions"
+    - "from azure.cosmos import PartitionKey"
+  notes: >
+    CosmosDB hierarchy: account -> database -> container -> item.
+    Firestore hierarchy: project -> database -> collection -> document.
+    CosmosDB database maps to Firestore database (usually "default").
+    CosmosDB container maps to Firestore collection.
+    CosmosDB item maps to Firestore document.
+    CosmosDB partition key maps to Firestore document ID or collection group structure.
+    CosmosDB SQL API queries map to Firestore where() queries (less flexible).
+    CosmosDB change feed maps to Firestore real-time listeners.
+    CosmosDB request units (RU) have no Firestore equivalent (Firestore auto-scales).
+base_confidence: 0.72
+tags:
+  - cosmosdb
+  - firestore
+  - python
+  - database
+  - client-init
+  - medium-complexity
+examples:
+  - input: |
+      from azure.cosmos import CosmosClient, PartitionKey
+
+      cosmos_client = CosmosClient(
+          url=os.environ["COSMOS_ENDPOINT"],
+          credential=os.environ["COSMOS_KEY"]
+      )
+      database = cosmos_client.get_database_client("myapp")
+      container = database.get_container_client("users")
+
+      # Create item
+      container.create_item(body={
+          "id": "user123",
+          "name": "Alice",
+          "email": "alice@example.com",
+          "partition_key": "us-east"
+      })
+
+      # Read item
+      item = container.read_item(item="user123", partition_key="us-east")
+
+      # Query items
+      items = container.query_items(
+          query="SELECT * FROM c WHERE c.name = @name",
+          parameters=[{"name": "@name", "value": "Alice"}],
+          partition_key="us-east"
+      )
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      collection = db.collection("users")
+
+      # Create document
+      doc_ref = collection.document("user123")
+      doc_ref.set({
+          "name": "Alice",
+          "email": "alice@example.com",
+          "region": "us-east"
+      })
+
+      # Read document
+      doc = collection.document("user123").get()
+      if doc.exists:
+          item = doc.to_dict()
+
+      # Query documents
+      query = collection.where("name", "==", "Alice")
+      items = [doc.to_dict() for doc in query.stream()]

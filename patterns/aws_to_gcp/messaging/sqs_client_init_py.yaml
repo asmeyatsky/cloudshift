@@ -1,0 +1,62 @@
+id: sqs-client-init-to-pubsub-py
+name: "SQS Client Init to Pub/Sub Client (Python)"
+description: >
+  Transforms boto3 SQS client initialization to google.cloud.pubsub
+  PublisherClient and/or SubscriberClient. SQS is a pull-based message queue
+  while Pub/Sub is a publish-subscribe messaging service that supports both
+  push and pull delivery.
+source_provider: aws
+target_provider: gcp
+source_service: sqs
+target_service: pubsub
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "import boto3"
+  client_names:
+    - "boto3.client('sqs')"
+    - "boto3.resource('sqs')"
+    - 'boto3.client("sqs")'
+    - 'boto3.resource("sqs")'
+  text_patterns:
+    - "sqs"
+    - "QueueUrl"
+transform:
+  replacement_template: |
+    from google.cloud import pubsub_v1
+
+    publisher = pubsub_v1.PublisherClient()
+    subscriber = pubsub_v1.SubscriberClient()
+  import_additions:
+    - "from google.cloud import pubsub_v1"
+  import_removals:
+    - "import boto3"
+  notes: >
+    SQS queues map to Pub/Sub subscriptions (for receiving) and topics (for sending).
+    One SQS queue typically maps to one Pub/Sub topic + one subscription.
+    SQS is point-to-point; Pub/Sub supports fan-out (multiple subscriptions per topic).
+    SQS FIFO queues map to Pub/Sub topics with ordering keys.
+    SQS dead-letter queues map to Pub/Sub dead-letter topics.
+    For task queue semantics, consider Cloud Tasks instead of Pub/Sub.
+base_confidence: 0.82
+tags:
+  - sqs
+  - pubsub
+  - python
+  - messaging
+  - client-init
+  - medium-complexity
+examples:
+  - input: |
+      import boto3
+
+      sqs = boto3.client('sqs', region_name='us-east-1')
+      queue_url = 'https://sqs.us-east-1.amazonaws.com/123456789/my-queue'
+    output: |
+      from google.cloud import pubsub_v1
+
+      publisher = pubsub_v1.PublisherClient()
+      subscriber = pubsub_v1.SubscriberClient()
+      topic_path = publisher.topic_path("my-project", "my-queue")
+      subscription_path = subscriber.subscription_path("my-project", "my-queue-sub")

@@ -1,0 +1,143 @@
+id: azure-eventhub-to-pubsub-tf
+name: "Azure Event Hub to Pub/Sub (Terraform)"
+description: >
+  Transforms azurerm_eventhub_namespace and azurerm_eventhub to
+  google_pubsub_topic and google_pubsub_subscription. Event Hubs is a
+  streaming ingestion service similar to Pub/Sub for high-throughput scenarios.
+source_provider: azure
+target_provider: gcp
+source_service: event-hubs
+target_service: pubsub
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_eventhub_namespace"
+    - "azurerm_eventhub"
+    - "azurerm_eventhub_consumer_group"
+  text_patterns:
+    - "partition_count"
+    - "message_retention"
+    - "throughput_units"
+    - "eventhub"
+transform:
+  replacement_template: |
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_retention_duration = "{{retention_duration}}"
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    resource "google_pubsub_subscription" "{{subscription_name}}" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{resource_name}}.id
+      project = var.project_id
+
+      ack_deadline_seconds       = 60
+      message_retention_duration = "{{retention_duration}}"
+      retain_acked_messages      = {{retain_acked}}
+
+      expiration_policy {
+        ttl = ""
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Event Hubs namespace is a grouping concept; no GCP equivalent.
+    Event Hubs partitions map to Pub/Sub internal partitioning (automatic,
+    not user-configurable). Pub/Sub auto-scales; no throughput_units equivalent.
+    Event Hubs consumer groups map to Pub/Sub subscriptions (each consumer
+    group = one subscription for independent consumption).
+    Event Hubs capture (to Blob/ADLS) maps to Pub/Sub BigQuery subscription
+    or Pub/Sub -> Dataflow -> GCS pipeline.
+    Event Hubs message_retention (1-7 days) maps to message_retention_duration.
+    Event Hubs Kafka interface: Pub/Sub has no Kafka compatibility;
+    consider Confluent Cloud on GCP or Managed Service for Apache Kafka.
+base_confidence: 0.78
+tags:
+  - event-hubs
+  - pubsub
+  - terraform
+  - messaging
+  - streaming
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_eventhub_namespace" "main" {
+        name                = "myapp-eventhub"
+        location            = azurerm_resource_group.main.location
+        resource_group_name = azurerm_resource_group.main.name
+        sku                 = "Standard"
+        capacity            = 2
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "azurerm_eventhub" "events" {
+        name                = "app-events"
+        namespace_name      = azurerm_eventhub_namespace.main.name
+        resource_group_name = azurerm_resource_group.main.name
+        partition_count     = 4
+        message_retention   = 7
+      }
+
+      resource "azurerm_eventhub_consumer_group" "analytics" {
+        name                = "analytics-consumer"
+        namespace_name      = azurerm_eventhub_namespace.main.name
+        eventhub_name       = azurerm_eventhub.events.name
+        resource_group_name = azurerm_resource_group.main.name
+      }
+
+      resource "azurerm_eventhub_consumer_group" "processing" {
+        name                = "processing-consumer"
+        namespace_name      = azurerm_eventhub_namespace.main.name
+        eventhub_name       = azurerm_eventhub.events.name
+        resource_group_name = azurerm_resource_group.main.name
+      }
+    output: |
+      resource "google_pubsub_topic" "events" {
+        name    = "app-events"
+        project = var.project_id
+
+        message_retention_duration = "604800s"
+
+        labels = {
+          environment = "production"
+        }
+      }
+
+      # Each consumer group maps to a separate subscription
+      resource "google_pubsub_subscription" "analytics" {
+        name    = "app-events-analytics"
+        topic   = google_pubsub_topic.events.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "604800s"
+
+        expiration_policy {
+          ttl = ""
+        }
+      }
+
+      resource "google_pubsub_subscription" "processing" {
+        name    = "app-events-processing"
+        topic   = google_pubsub_topic.events.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "604800s"
+
+        expiration_policy {
+          ttl = ""
+        }
+      }

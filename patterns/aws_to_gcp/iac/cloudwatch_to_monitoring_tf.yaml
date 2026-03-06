@@ -1,0 +1,153 @@
+id: cloudwatch-to-cloud-monitoring-tf
+name: "CloudWatch to Cloud Monitoring (Terraform)"
+description: >
+  Transforms aws_cloudwatch_metric_alarm and aws_cloudwatch_log_group to
+  google_monitoring_alert_policy and google_logging_project_sink or
+  google_logging_metric. Maps CloudWatch metrics, alarms, dashboards,
+  and log groups to GCP Cloud Monitoring and Cloud Logging equivalents.
+source_provider: aws
+target_provider: gcp
+source_service: cloudwatch
+target_service: cloud-monitoring
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_cloudwatch_metric_alarm"
+    - "aws_cloudwatch_log_group"
+    - "aws_cloudwatch_dashboard"
+    - "aws_cloudwatch_log_metric_filter"
+  text_patterns:
+    - "metric_name"
+    - "namespace"
+    - "comparison_operator"
+    - "threshold"
+    - "alarm_actions"
+transform:
+  replacement_template: |
+    resource "google_monitoring_alert_policy" "{{resource_name}}" {
+      display_name = "{{alert_name}}"
+      project      = var.project_id
+      combiner     = "OR"
+
+      conditions {
+        display_name = "{{condition_name}}"
+
+        condition_threshold {
+          filter          = "{{filter}}"
+          comparison      = "{{comparison}}"
+          threshold_value = {{threshold}}
+          duration        = "{{duration}}"
+
+          aggregations {
+            alignment_period   = "{{period}}"
+            per_series_aligner = "{{aligner}}"
+          }
+
+          trigger {
+            count = 1
+          }
+        }
+      }
+
+      notification_channels = [{{notification_channels}}]
+
+      alert_strategy {
+        auto_close = "604800s"
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    CloudWatch comparison_operator mapping:
+      - GreaterThanThreshold -> COMPARISON_GT
+      - GreaterThanOrEqualToThreshold -> COMPARISON_GE
+      - LessThanThreshold -> COMPARISON_LT
+      - LessThanOrEqualToThreshold -> COMPARISON_LE
+    CloudWatch statistic mapping:
+      - Average -> ALIGN_MEAN
+      - Sum -> ALIGN_SUM
+      - Maximum -> ALIGN_MAX
+      - Minimum -> ALIGN_MIN
+      - SampleCount -> ALIGN_COUNT
+    CloudWatch namespace/metric pairs map to GCP metric types
+    (e.g., AWS/EC2/CPUUtilization -> compute.googleapis.com/instance/cpu/utilization).
+    CloudWatch alarm_actions (SNS) map to notification_channels.
+    CloudWatch log groups are automatic in GCP (Cloud Logging collects all logs).
+    CloudWatch log metric filters map to google_logging_metric.
+base_confidence: 0.70
+tags:
+  - cloudwatch
+  - cloud-monitoring
+  - terraform
+  - observability
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_cloudwatch_metric_alarm" "high_cpu" {
+        alarm_name          = "high-cpu-utilization"
+        comparison_operator = "GreaterThanThreshold"
+        evaluation_periods  = 2
+        metric_name         = "CPUUtilization"
+        namespace           = "AWS/EC2"
+        period              = 300
+        statistic           = "Average"
+        threshold           = 80
+        alarm_description   = "CPU utilization above 80%"
+        alarm_actions       = [aws_sns_topic.alerts.arn]
+
+        dimensions = {
+          InstanceId = aws_instance.web.id
+        }
+      }
+
+      resource "aws_cloudwatch_log_group" "app" {
+        name              = "/app/production"
+        retention_in_days = 30
+
+        tags = {
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_monitoring_alert_policy" "high_cpu" {
+        display_name = "high-cpu-utilization"
+        project      = var.project_id
+        combiner     = "OR"
+
+        conditions {
+          display_name = "CPU utilization above 80%"
+
+          condition_threshold {
+            filter          = "resource.type = \"gce_instance\" AND metric.type = \"compute.googleapis.com/instance/cpu/utilization\""
+            comparison      = "COMPARISON_GT"
+            threshold_value = 0.8
+            duration        = "600s"
+
+            aggregations {
+              alignment_period   = "300s"
+              per_series_aligner = "ALIGN_MEAN"
+            }
+
+            trigger {
+              count = 1
+            }
+          }
+        }
+
+        notification_channels = [google_monitoring_notification_channel.alerts.id]
+
+        alert_strategy {
+          auto_close = "604800s"
+        }
+      }
+
+      # Cloud Logging automatically collects logs; no log group resource needed.
+      # To control retention, use a log sink or log bucket:
+      resource "google_logging_project_bucket_config" "app" {
+        project        = var.project_id
+        location       = "global"
+        bucket_id      = "app-production"
+        retention_days = 30
+      }

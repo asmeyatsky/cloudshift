@@ -1,0 +1,84 @@
+id: sqs-receive-message-to-pubsub-pull-py
+name: "SQS receive_message to Pub/Sub pull (Python)"
+description: >
+  Transforms SQS receive_message and delete_message calls to Pub/Sub
+  subscriber.pull and acknowledge. Maps visibility timeout to ack deadline,
+  and covers both synchronous pull and streaming pull patterns.
+source_provider: aws
+target_provider: gcp
+source_service: sqs
+target_service: pubsub
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "receive_message"
+    - "delete_message"
+  text_patterns:
+    - "QueueUrl="
+    - "MaxNumberOfMessages="
+    - "WaitTimeSeconds="
+    - "VisibilityTimeout="
+    - "ReceiptHandle"
+transform:
+  replacement_template: |
+    subscription_path = subscriber.subscription_path("{{project_id}}", "{{subscription_name}}")
+    response = subscriber.pull(
+        request={"subscription": subscription_path, "max_messages": {{max_messages}}}
+    )
+    ack_ids = []
+    for msg in response.received_messages:
+        data = msg.message.data.decode("utf-8")
+        # Process message
+        ack_ids.append(msg.ack_id)
+
+    if ack_ids:
+        subscriber.acknowledge(request={"subscription": subscription_path, "ack_ids": ack_ids})
+  import_additions: []
+  import_removals: []
+  notes: >
+    SQS receive_message + delete_message maps to Pub/Sub pull + acknowledge.
+    SQS VisibilityTimeout maps to Pub/Sub ack_deadline_seconds (set on subscription).
+    SQS WaitTimeSeconds (long polling) maps to Pub/Sub pull with timeout.
+    For production use, prefer Pub/Sub streaming pull (subscriber.subscribe()) over
+    synchronous pull — it is more efficient and recommended by Google.
+    SQS message deletion = Pub/Sub acknowledgment. Unacknowledged messages are
+    redelivered after ack_deadline expires (similar to visibility timeout expiry).
+base_confidence: 0.80
+tags:
+  - sqs
+  - pubsub
+  - python
+  - messaging
+  - method-call
+  - medium-complexity
+examples:
+  - input: |
+      while True:
+          response = sqs.receive_message(
+              QueueUrl=queue_url,
+              MaxNumberOfMessages=10,
+              WaitTimeSeconds=20,
+              VisibilityTimeout=60
+          )
+          messages = response.get('Messages', [])
+          for msg in messages:
+              body = json.loads(msg['Body'])
+              process_message(body)
+              sqs.delete_message(
+                  QueueUrl=queue_url,
+                  ReceiptHandle=msg['ReceiptHandle']
+              )
+    output: |
+      def callback(message):
+          body = json.loads(message.data.decode("utf-8"))
+          process_message(body)
+          message.ack()
+
+      subscription_path = subscriber.subscription_path("my-project", "my-queue-sub")
+      streaming_pull = subscriber.subscribe(subscription_path, callback=callback)
+      try:
+          streaming_pull.result()
+      except Exception:
+          streaming_pull.cancel()
+          streaming_pull.result()

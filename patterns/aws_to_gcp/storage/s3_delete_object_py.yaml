@@ -1,0 +1,66 @@
+id: s3-delete-object-to-gcs-delete-py
+name: "S3 delete_object to GCS blob.delete (Python)"
+description: >
+  Transforms S3 delete_object calls to GCS blob.delete. Maps Bucket/Key to
+  bucket/blob path. Also covers delete_objects (batch delete) mapped to
+  bucket.delete_blobs.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "delete_object"
+    - "delete_objects"
+  text_patterns:
+    - "Bucket="
+    - "Key="
+    - "Delete="
+transform:
+  replacement_template: |
+    bucket = storage_client.bucket("{{bucket_name}}")
+    blob = bucket.blob("{{key}}")
+    blob.delete()
+  import_additions: []
+  import_removals: []
+  notes: >
+    S3 delete_object succeeds silently if the key does not exist. GCS blob.delete()
+    raises google.cloud.exceptions.NotFound if the blob does not exist; use
+    blob.delete(if_generation_match=0) or wrap in a try/except if you need the
+    same silent behavior. For batch deletes, use bucket.delete_blobs(blob_list)
+    instead of S3 delete_objects.
+base_confidence: 0.90
+tags:
+  - s3
+  - cloud-storage
+  - python
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      s3_client.delete_object(
+          Bucket='my-bucket',
+          Key='data/old_file.json'
+      )
+    output: |
+      bucket = storage_client.bucket("my-bucket")
+      blob = bucket.blob("data/old_file.json")
+      blob.delete()
+  - input: |
+      s3_client.delete_objects(
+          Bucket='my-bucket',
+          Delete={
+              'Objects': [
+                  {'Key': 'file1.txt'},
+                  {'Key': 'file2.txt'},
+                  {'Key': 'file3.txt'}
+              ]
+          }
+      )
+    output: |
+      bucket = storage_client.bucket("my-bucket")
+      blobs = [bucket.blob("file1.txt"), bucket.blob("file2.txt"), bucket.blob("file3.txt")]
+      bucket.delete_blobs(blobs)

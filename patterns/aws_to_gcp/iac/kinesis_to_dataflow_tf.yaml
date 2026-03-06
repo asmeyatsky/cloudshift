@@ -1,0 +1,147 @@
+id: kinesis-to-dataflow-tf
+name: "Kinesis Data Stream to Dataflow (Terraform)"
+description: >
+  Transforms aws_kinesis_stream to google_pubsub_topic (for ingestion) and
+  google_dataflow_job (for processing). Kinesis is a real-time streaming
+  service; the GCP equivalent involves Pub/Sub for ingestion and Dataflow
+  for stream processing, or Pub/Sub alone for simpler use cases.
+source_provider: aws
+target_provider: gcp
+source_service: kinesis
+target_service: dataflow
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_kinesis_stream"
+    - "aws_kinesis_firehose_delivery_stream"
+  text_patterns:
+    - "shard_count"
+    - "retention_period"
+    - "stream_mode"
+    - "kinesis"
+transform:
+  replacement_template: |
+    # Pub/Sub topic for data ingestion (replaces Kinesis stream)
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_retention_duration = "{{retention_duration}}"
+    }
+
+    resource "google_pubsub_subscription" "{{resource_name}}" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{resource_name}}.id
+      project = var.project_id
+
+      ack_deadline_seconds       = 60
+      message_retention_duration = "{{retention_duration}}"
+    }
+
+    # Dataflow job for stream processing (if Kinesis consumers do processing)
+    resource "google_dataflow_job" "{{job_name}}" {
+      name              = "{{job_name}}"
+      template_gcs_path = "gs://dataflow-templates/latest/{{template}}"
+      temp_gcs_location = "gs://{{temp_bucket}}/tmp"
+      project           = var.project_id
+      region            = "{{region}}"
+
+      parameters = {
+        inputSubscription = google_pubsub_subscription.{{resource_name}}.id
+        outputTable       = "{{output_table}}"
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Kinesis stream -> Pub/Sub topic is the primary mapping for data ingestion.
+    Kinesis shard_count has no direct Pub/Sub equivalent (Pub/Sub auto-scales).
+    Kinesis Data Analytics maps to Dataflow (Apache Beam).
+    Kinesis Data Firehose maps to Pub/Sub + Dataflow or Pub/Sub + BigQuery
+    subscription (for direct BigQuery loading).
+    Kinesis retention_period (24h-365d) maps to message_retention_duration.
+    Kinesis enhanced fan-out maps to multiple Pub/Sub subscriptions.
+    For simple Kinesis-to-storage patterns, consider Pub/Sub BigQuery subscriptions
+    instead of Dataflow.
+base_confidence: 0.65
+tags:
+  - kinesis
+  - dataflow
+  - pubsub
+  - terraform
+  - streaming
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_kinesis_stream" "events" {
+        name             = "event-stream"
+        shard_count      = 4
+        retention_period = 48
+
+        stream_mode_details {
+          stream_mode = "PROVISIONED"
+        }
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "aws_kinesis_firehose_delivery_stream" "events_s3" {
+        name        = "events-to-s3"
+        destination = "extended_s3"
+
+        kinesis_source_configuration {
+          kinesis_stream_arn = aws_kinesis_stream.events.arn
+          role_arn           = aws_iam_role.firehose.arn
+        }
+
+        extended_s3_configuration {
+          role_arn   = aws_iam_role.firehose.arn
+          bucket_arn = aws_s3_bucket.events.arn
+          prefix     = "events/"
+
+          buffering_size     = 64
+          buffering_interval = 300
+        }
+      }
+    output: |
+      resource "google_pubsub_topic" "events" {
+        name    = "event-stream"
+        project = var.project_id
+
+        message_retention_duration = "172800s"
+      }
+
+      resource "google_pubsub_subscription" "events" {
+        name    = "event-stream-sub"
+        topic   = google_pubsub_topic.events.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "172800s"
+      }
+
+      # Replace Firehose with Dataflow for stream-to-GCS delivery
+      resource "google_dataflow_job" "events_to_gcs" {
+        name              = "events-to-gcs"
+        template_gcs_path = "gs://dataflow-templates/latest/Cloud_PubSub_to_GCS_Text"
+        temp_gcs_location = "gs://${google_storage_bucket.temp.name}/tmp"
+        project           = var.project_id
+        region            = "us-central1"
+
+        parameters = {
+          inputSubscription = google_pubsub_subscription.events.id
+          outputDirectory   = "gs://${google_storage_bucket.events.name}/events/"
+        }
+
+        labels = {
+          environment = "production"
+        }
+      }

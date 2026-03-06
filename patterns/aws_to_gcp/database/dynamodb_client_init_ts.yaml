@@ -1,0 +1,45 @@
+id: dynamodb-client-init-to-firestore-ts
+name: "DynamoDB Client Init to Firestore (TypeScript)"
+description: >
+  Transforms DynamoDBClient initialization from @aws-sdk/client-dynamodb
+  to Google Cloud Firestore client initialization.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: typescript
+construct_type: client_init
+match_pattern:
+  imports:
+    - "@aws-sdk/client-dynamodb"
+    - "DynamoDBClient"
+  client_names:
+    - "DynamoDBClient"
+    - "DynamoDBDocumentClient"
+  text_patterns:
+    - "new DynamoDBClient"
+transform:
+  replacement_template: |
+    const firestore = new Firestore();
+  import_additions:
+    - "import { Firestore } from '@google-cloud/firestore';"
+  import_removals:
+    - "import { DynamoDBClient } from '@aws-sdk/client-dynamodb';"
+  notes: >
+    DynamoDB is a key-value/document DB; Firestore is the closest GCP equivalent
+    for document-oriented workloads. For high-throughput key-value workloads,
+    consider Cloud Bigtable instead.
+base_confidence: 0.82
+tags:
+  - dynamodb
+  - firestore
+  - typescript
+  - database
+  - client-init
+examples:
+  - input: |
+      import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+      const client = new DynamoDBClient({ region: "us-east-1" });
+    output: |
+      import { Firestore } from '@google-cloud/firestore';
+      const firestore = new Firestore();

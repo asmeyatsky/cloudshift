@@ -1,0 +1,113 @@
+id: cosmosdb-to-firestore-tf
+name: "CosmosDB Account to Firestore Database (Terraform)"
+description: >
+  Transforms azurerm_cosmosdb_account and azurerm_cosmosdb_sql_database
+  to google_firestore_database. Maps CosmosDB consistency levels, geo-replication,
+  and throughput settings to Firestore equivalents.
+source_provider: azure
+target_provider: gcp
+source_service: cosmosdb
+target_service: firestore
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_cosmosdb_account"
+    - "azurerm_cosmosdb_sql_database"
+    - "azurerm_cosmosdb_sql_container"
+  text_patterns:
+    - "consistency_policy"
+    - "offer_type"
+    - "kind"
+    - "geo_location"
+    - "partition_key_path"
+transform:
+  replacement_template: |
+    resource "google_firestore_database" "{{resource_name}}" {
+      project                     = var.project_id
+      name                        = "{{database_name}}"
+      location_id                 = "{{location}}"
+      type                        = "FIRESTORE_NATIVE"
+      concurrency_mode            = "{{concurrency_mode}}"
+      app_engine_integration_mode = "DISABLED"
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    CosmosDB consistency levels mapping:
+      - Strong -> Firestore is always strongly consistent
+      - BoundedStaleness -> Not applicable (Firestore is always strong)
+      - Session -> Not applicable
+      - Eventual -> Not applicable (Firestore doesn't offer eventual)
+    CosmosDB geo_location (multi-region writes) maps to Firestore multi-region
+    location (nam5, eur3) but Firestore doesn't support multi-region writes.
+    CosmosDB throughput (RU/s) has no equivalent; Firestore auto-scales.
+    CosmosDB SQL containers with partition keys map to Firestore collections
+    (collection structure should reflect access patterns).
+    CosmosDB TTL maps to Firestore TTL field policies.
+    CosmosDB stored procedures have no Firestore equivalent; use Cloud Functions.
+base_confidence: 0.65
+tags:
+  - cosmosdb
+  - firestore
+  - terraform
+  - database
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "azurerm_cosmosdb_account" "main" {
+        name                = "myapp-cosmos"
+        location            = azurerm_resource_group.main.location
+        resource_group_name = azurerm_resource_group.main.name
+        offer_type          = "Standard"
+        kind                = "GlobalDocumentDB"
+
+        consistency_policy {
+          consistency_level = "Session"
+        }
+
+        geo_location {
+          location          = "eastus"
+          failover_priority = 0
+        }
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "azurerm_cosmosdb_sql_database" "main" {
+        name                = "myapp"
+        resource_group_name = azurerm_resource_group.main.name
+        account_name        = azurerm_cosmosdb_account.main.name
+      }
+
+      resource "azurerm_cosmosdb_sql_container" "users" {
+        name                = "users"
+        resource_group_name = azurerm_resource_group.main.name
+        account_name        = azurerm_cosmosdb_account.main.name
+        database_name       = azurerm_cosmosdb_sql_database.main.name
+        partition_key_path  = "/region"
+
+        indexing_policy {
+          indexing_mode = "consistent"
+        }
+      }
+    output: |
+      resource "google_firestore_database" "main" {
+        project                     = var.project_id
+        name                        = "(default)"
+        location_id                 = "nam5"
+        type                        = "FIRESTORE_NATIVE"
+        concurrency_mode            = "OPTIMISTIC"
+        app_engine_integration_mode = "DISABLED"
+      }
+
+      # CosmosDB containers map to Firestore collections
+      # The "users" container with partition key "/region" maps to
+      # a "users" collection. Consider using subcollections by region
+      # if partition isolation is needed:
+      #   users/{userId} with region field
+      # or
+      #   regions/{regionId}/users/{userId}

@@ -1,0 +1,145 @@
+id: sqs-queue-to-pubsub-topic-tf
+name: "SQS Queue to Pub/Sub Topic + Subscription (Terraform)"
+description: >
+  Transforms aws_sqs_queue to google_pubsub_topic and google_pubsub_subscription.
+  Maps visibility timeout to ack_deadline_seconds, message retention,
+  and dead-letter queue configuration.
+source_provider: aws
+target_provider: gcp
+source_service: sqs
+target_service: pubsub
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_sqs_queue"
+    - "aws_sqs_queue_policy"
+  text_patterns:
+    - "visibility_timeout_seconds"
+    - "message_retention_seconds"
+    - "delay_seconds"
+    - "fifo_queue"
+transform:
+  replacement_template: |
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_retention_duration = "{{retention_duration}}"
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    resource "google_pubsub_subscription" "{{resource_name}}" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{resource_name}}.id
+      project = var.project_id
+
+      ack_deadline_seconds       = {{ack_deadline}}
+      message_retention_duration = "{{message_retention}}"
+      retain_acked_messages      = false
+
+      expiration_policy {
+        ttl = ""
+      }
+
+      retry_policy {
+        minimum_backoff = "10s"
+        maximum_backoff = "600s"
+      }
+
+      {{dead_letter_policy}}
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    SQS is a queue (point-to-point); Pub/Sub is pub-sub (fan-out capable).
+    A single SQS queue maps to one topic + one subscription for equivalent behavior.
+    SQS visibility_timeout_seconds maps to ack_deadline_seconds (10-600s in Pub/Sub).
+    SQS message_retention_seconds (60s-14d) maps to message_retention_duration.
+    SQS delay_seconds has no per-queue equivalent in Pub/Sub.
+    SQS FIFO queues map to Pub/Sub topics with enable_message_ordering=true on subscriptions.
+    SQS RedrivePolicy maps to Pub/Sub dead_letter_policy.
+base_confidence: 0.82
+tags:
+  - sqs
+  - pubsub
+  - terraform
+  - messaging
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_sqs_queue" "orders" {
+        name                       = "order-processing"
+        visibility_timeout_seconds = 60
+        message_retention_seconds  = 345600
+        delay_seconds              = 0
+        max_message_size           = 262144
+
+        redrive_policy = jsonencode({
+          deadLetterTargetArn = aws_sqs_queue.orders_dlq.arn
+          maxReceiveCount     = 3
+        })
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "aws_sqs_queue" "orders_dlq" {
+        name                       = "order-processing-dlq"
+        message_retention_seconds  = 1209600
+
+        tags = {
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_pubsub_topic" "orders" {
+        name    = "order-processing"
+        project = var.project_id
+
+        message_retention_duration = "345600s"
+
+        labels = {
+          environment = "production"
+        }
+      }
+
+      resource "google_pubsub_topic" "orders_dlq" {
+        name    = "order-processing-dlq"
+        project = var.project_id
+
+        message_retention_duration = "1209600s"
+
+        labels = {
+          environment = "production"
+        }
+      }
+
+      resource "google_pubsub_subscription" "orders" {
+        name    = "order-processing-sub"
+        topic   = google_pubsub_topic.orders.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "345600s"
+        retain_acked_messages      = false
+
+        expiration_policy {
+          ttl = ""
+        }
+
+        retry_policy {
+          minimum_backoff = "10s"
+          maximum_backoff = "600s"
+        }
+
+        dead_letter_policy {
+          dead_letter_topic     = google_pubsub_topic.orders_dlq.id
+          max_delivery_attempts = 3
+        }
+      }

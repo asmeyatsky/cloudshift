@@ -1,0 +1,122 @@
+id: route53-to-cloud-dns-tf
+name: "Route53 to Cloud DNS (Terraform)"
+description: >
+  Transforms aws_route53_zone and aws_route53_record to
+  google_dns_managed_zone and google_dns_record_set.
+  Maps DNS zone configuration and record types.
+source_provider: aws
+target_provider: gcp
+source_service: route53
+target_service: cloud-dns
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_route53_zone"
+    - "aws_route53_record"
+    - "aws_route53_health_check"
+  text_patterns:
+    - "zone_id"
+    - "records"
+    - "type"
+    - "ttl"
+transform:
+  replacement_template: |
+    resource "google_dns_managed_zone" "{{resource_name}}" {
+      name        = "{{zone_name}}"
+      dns_name    = "{{dns_name}}"
+      description = "{{description}}"
+      project     = var.project_id
+
+      visibility = "public"
+
+      dnssec_config {
+        state = "on"
+      }
+    }
+
+    resource "google_dns_record_set" "{{record_name}}" {
+      name         = "{{fqdn}}"
+      type         = "{{record_type}}"
+      ttl          = {{ttl}}
+      managed_zone = google_dns_managed_zone.{{resource_name}}.name
+      project      = var.project_id
+
+      rrdatas = [{{records}}]
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Route53 hosted zone maps to Cloud DNS managed zone.
+    Route53 alias records (for ALB/CloudFront) have no direct equivalent;
+    use A/AAAA records pointing to the GCP load balancer IP.
+    Route53 routing policies:
+      - Simple -> standard Cloud DNS record
+      - Weighted -> Cloud DNS weighted routing policy
+      - Latency -> Cloud DNS geo routing policy (approximate)
+      - Failover -> Cloud DNS with health checks
+      - Geolocation -> Cloud DNS geo routing policy
+    Route53 health checks map to Cloud DNS health checks (via Compute Engine).
+    Route53 private hosted zones map to Cloud DNS private zones.
+base_confidence: 0.82
+tags:
+  - route53
+  - cloud-dns
+  - terraform
+  - networking
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_route53_zone" "main" {
+        name = "example.com"
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "aws_route53_record" "www" {
+        zone_id = aws_route53_zone.main.zone_id
+        name    = "www.example.com"
+        type    = "A"
+        ttl     = 300
+        records = ["1.2.3.4"]
+      }
+
+      resource "aws_route53_record" "api" {
+        zone_id = aws_route53_zone.main.zone_id
+        name    = "api.example.com"
+        type    = "CNAME"
+        ttl     = 300
+        records = ["api-lb.example.com"]
+      }
+    output: |
+      resource "google_dns_managed_zone" "main" {
+        name        = "example-com"
+        dns_name    = "example.com."
+        description = "Primary DNS zone"
+        project     = var.project_id
+
+        visibility = "public"
+      }
+
+      resource "google_dns_record_set" "www" {
+        name         = "www.example.com."
+        type         = "A"
+        ttl          = 300
+        managed_zone = google_dns_managed_zone.main.name
+        project      = var.project_id
+
+        rrdatas = ["1.2.3.4"]
+      }
+
+      resource "google_dns_record_set" "api" {
+        name         = "api.example.com."
+        type         = "CNAME"
+        ttl          = 300
+        managed_zone = google_dns_managed_zone.main.name
+        project      = var.project_id
+
+        rrdatas = ["api-lb.example.com."]
+      }

@@ -1,0 +1,124 @@
+id: ec2-instance-to-compute-engine-tf
+name: "EC2 Instance to Compute Engine (Terraform)"
+description: >
+  Transforms an aws_instance Terraform resource to a google_compute_instance.
+  Maps instance types to GCP machine types, AMIs to GCP images, security groups
+  to firewall rules, and EBS volumes to persistent disks.
+source_provider: aws
+target_provider: gcp
+source_service: ec2
+target_service: compute-engine
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_instance"
+  text_patterns:
+    - "ami"
+    - "instance_type"
+    - "vpc_security_group_ids"
+transform:
+  replacement_template: |
+    resource "google_compute_instance" "{{resource_name}}" {
+      name         = "{{instance_name}}"
+      machine_type = "{{machine_type}}"
+      zone         = "{{zone}}"
+
+      boot_disk {
+        initialize_params {
+          image = "{{image}}"
+          size  = {{disk_size_gb}}
+          type  = "pd-balanced"
+        }
+      }
+
+      network_interface {
+        network    = "{{network}}"
+        subnetwork = "{{subnetwork}}"
+
+        access_config {
+          // Ephemeral public IP — omit this block if no public IP is needed
+        }
+      }
+
+      metadata = {
+        {{metadata}}
+      }
+
+      tags = [{{network_tags}}]
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions:
+    - 'provider "google" {}'
+  import_removals:
+    - 'provider "aws" {}'
+  notes: >
+    Instance type mapping is approximate. Common mappings:
+    t3.micro -> e2-micro, t3.small -> e2-small, t3.medium -> e2-medium,
+    m5.large -> n2-standard-2, m5.xlarge -> n2-standard-4,
+    c5.large -> c2-standard-4, r5.large -> n2-highmem-2.
+    AMIs must be replaced with GCP image families (e.g., debian-11, ubuntu-2204-lts).
+    Security groups map to google_compute_firewall resources with target tags.
+    user_data maps to metadata_startup_script.
+base_confidence: 0.75
+tags:
+  - ec2
+  - compute-engine
+  - terraform
+  - compute
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_instance" "web_server" {
+        ami           = "ami-0c55b159cbfafe1f0"
+        instance_type = "t3.medium"
+
+        vpc_security_group_ids = [aws_security_group.web.id]
+        subnet_id              = aws_subnet.public.id
+
+        root_block_device {
+          volume_size = 20
+          volume_type = "gp3"
+        }
+
+        user_data = file("startup.sh")
+
+        tags = {
+          Name        = "web-server"
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_compute_instance" "web_server" {
+        name         = "web-server"
+        machine_type = "e2-medium"
+        zone         = "us-central1-a"
+
+        boot_disk {
+          initialize_params {
+            image = "debian-cloud/debian-11"
+            size  = 20
+            type  = "pd-balanced"
+          }
+        }
+
+        network_interface {
+          network    = google_compute_network.main.id
+          subnetwork = google_compute_subnetwork.public.id
+
+          access_config {
+            // Ephemeral public IP
+          }
+        }
+
+        metadata_startup_script = file("startup.sh")
+
+        labels = {
+          environment = "production"
+        }
+
+        tags = ["web-server"]
+      }

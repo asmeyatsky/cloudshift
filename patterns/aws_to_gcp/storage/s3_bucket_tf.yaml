@@ -1,0 +1,156 @@
+id: s3-bucket-to-gcs-bucket-tf
+name: "S3 Bucket to GCS Bucket (Terraform)"
+description: >
+  Transforms aws_s3_bucket and related resources (versioning, lifecycle,
+  encryption, ACL) to google_storage_bucket with equivalent settings.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_s3_bucket"
+    - "aws_s3_bucket_versioning"
+    - "aws_s3_bucket_lifecycle_configuration"
+    - "aws_s3_bucket_server_side_encryption_configuration"
+  text_patterns:
+    - "bucket"
+    - "acl"
+    - "versioning"
+transform:
+  replacement_template: |
+    resource "google_storage_bucket" "{{resource_name}}" {
+      name     = "{{bucket_name}}"
+      location = "{{location}}"
+      project  = var.project_id
+
+      storage_class               = "{{storage_class}}"
+      uniform_bucket_level_access = true
+
+      versioning {
+        enabled = {{versioning_enabled}}
+      }
+
+      lifecycle_rule {
+        condition {
+          age = {{lifecycle_days}}
+        }
+        action {
+          type          = "SetStorageClass"
+          storage_class = "NEARLINE"
+        }
+      }
+
+      lifecycle_rule {
+        condition {
+          age = {{expiration_days}}
+        }
+        action {
+          type = "Delete"
+        }
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    S3 storage class mapping: STANDARD -> STANDARD, STANDARD_IA -> NEARLINE,
+    GLACIER -> COLDLINE, DEEP_ARCHIVE -> ARCHIVE.
+    S3 bucket ACLs are deprecated in favor of IAM in GCP (uniform_bucket_level_access).
+    S3 bucket policy maps to google_storage_bucket_iam_binding.
+    S3 CORS configuration maps to the cors block in google_storage_bucket.
+    In AWS, multiple separate resources (versioning, lifecycle, encryption) are
+    consolidated into a single google_storage_bucket resource in GCP.
+base_confidence: 0.85
+tags:
+  - s3
+  - cloud-storage
+  - terraform
+  - storage
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_s3_bucket" "data" {
+        bucket = "my-app-data-bucket"
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "aws_s3_bucket_versioning" "data" {
+        bucket = aws_s3_bucket.data.id
+        versioning_configuration {
+          status = "Enabled"
+        }
+      }
+
+      resource "aws_s3_bucket_lifecycle_configuration" "data" {
+        bucket = aws_s3_bucket.data.id
+
+        rule {
+          id     = "archive"
+          status = "Enabled"
+
+          transition {
+            days          = 90
+            storage_class = "GLACIER"
+          }
+
+          expiration {
+            days = 365
+          }
+        }
+      }
+
+      resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
+        bucket = aws_s3_bucket.data.id
+
+        rule {
+          apply_server_side_encryption_by_default {
+            sse_algorithm = "AES256"
+          }
+        }
+      }
+    output: |
+      resource "google_storage_bucket" "data" {
+        name     = "my-app-data-bucket"
+        location = "US"
+        project  = var.project_id
+
+        storage_class               = "STANDARD"
+        uniform_bucket_level_access = true
+
+        versioning {
+          enabled = true
+        }
+
+        lifecycle_rule {
+          condition {
+            age = 90
+          }
+          action {
+            type          = "SetStorageClass"
+            storage_class = "COLDLINE"
+          }
+        }
+
+        lifecycle_rule {
+          condition {
+            age = 365
+          }
+          action {
+            type = "Delete"
+          }
+        }
+
+        labels = {
+          environment = "production"
+        }
+      }

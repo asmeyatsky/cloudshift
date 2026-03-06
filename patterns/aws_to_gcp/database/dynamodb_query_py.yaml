@@ -1,0 +1,76 @@
+id: dynamodb-query-to-firestore-where-py
+name: "DynamoDB query to Firestore where().stream (Python)"
+description: >
+  Transforms DynamoDB query operations (KeyConditionExpression and
+  FilterExpression) to Firestore collection queries using where() and stream().
+  DynamoDB queries are partition-key-scoped; Firestore queries use indexed fields.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "query"
+  text_patterns:
+    - "KeyConditionExpression"
+    - "FilterExpression"
+    - "ExpressionAttributeValues"
+    - "ProjectionExpression"
+    - "ScanIndexForward"
+transform:
+  replacement_template: |
+    query = db.collection("{{collection}}")
+    query = query.where("{{field}}", "{{operator}}", {{value}})
+    query = query.order_by("{{order_field}}", direction={{direction}})
+    query = query.limit({{limit}})
+
+    docs = query.stream()
+    for doc in docs:
+        data = doc.to_dict()
+  import_additions:
+    - "from google.cloud.firestore_v1.base_query import FieldFilter"
+  import_removals: []
+  notes: >
+    DynamoDB KeyConditionExpression targets partition+sort keys; Firestore
+    where() targets any indexed field. DynamoDB FilterExpression is post-query
+    filtering; Firestore where() is indexed filtering (more efficient).
+    DynamoDB Limit limits items evaluated, not returned; Firestore limit()
+    limits results returned. ScanIndexForward=False maps to
+    direction=firestore.Query.DESCENDING. Firestore requires composite
+    indexes for multi-field queries — ensure indexes exist.
+    DynamoDB pagination via LastEvaluatedKey maps to Firestore start_after().
+base_confidence: 0.72
+tags:
+  - dynamodb
+  - firestore
+  - python
+  - database
+  - method-call
+  - medium-complexity
+examples:
+  - input: |
+      from boto3.dynamodb.conditions import Key, Attr
+
+      response = table.query(
+          KeyConditionExpression=Key('user_id').eq('u123') & Key('timestamp').between(start, end),
+          FilterExpression=Attr('status').eq('active'),
+          ScanIndexForward=False,
+          Limit=10
+      )
+      items = response['Items']
+    output: |
+      from google.cloud.firestore_v1.base_query import FieldFilter
+
+      query = (
+          db.collection("events")
+          .where(filter=FieldFilter("user_id", "==", "u123"))
+          .where(filter=FieldFilter("timestamp", ">=", start))
+          .where(filter=FieldFilter("timestamp", "<=", end))
+          .where(filter=FieldFilter("status", "==", "active"))
+          .order_by("timestamp", direction=firestore.Query.DESCENDING)
+          .limit(10)
+      )
+      docs = query.stream()
+      items = [doc.to_dict() for doc in docs]

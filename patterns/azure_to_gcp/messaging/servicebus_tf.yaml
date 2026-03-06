@@ -1,0 +1,141 @@
+id: azure-servicebus-to-pubsub-tf
+name: "Azure Service Bus to Pub/Sub (Terraform)"
+description: >
+  Transforms azurerm_servicebus_namespace, azurerm_servicebus_queue, and
+  azurerm_servicebus_topic to google_pubsub_topic and google_pubsub_subscription.
+  Maps Service Bus messaging infrastructure to Pub/Sub equivalents.
+source_provider: azure
+target_provider: gcp
+source_service: service-bus
+target_service: pubsub
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_servicebus_namespace"
+    - "azurerm_servicebus_queue"
+    - "azurerm_servicebus_topic"
+    - "azurerm_servicebus_subscription"
+  text_patterns:
+    - "sku"
+    - "max_delivery_count"
+    - "lock_duration"
+    - "default_message_ttl"
+    - "dead_lettering_on_message_expiration"
+transform:
+  replacement_template: |
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_retention_duration = "{{retention_duration}}"
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    resource "google_pubsub_subscription" "{{subscription_name}}" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{resource_name}}.id
+      project = var.project_id
+
+      ack_deadline_seconds       = {{ack_deadline}}
+      message_retention_duration = "{{message_retention}}"
+
+      retry_policy {
+        minimum_backoff = "10s"
+        maximum_backoff = "600s"
+      }
+
+      dead_letter_policy {
+        dead_letter_topic     = google_pubsub_topic.{{dlq_name}}.id
+        max_delivery_attempts = {{max_delivery_count}}
+      }
+
+      expiration_policy {
+        ttl = ""
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Service Bus namespace is a grouping/billing concept; no GCP equivalent.
+    Service Bus SKU (Basic/Standard/Premium) maps to Pub/Sub (single tier, auto-scales).
+    Service Bus queue maps to Pub/Sub topic + subscription.
+    Service Bus topic + subscription maps directly to Pub/Sub topic + subscription.
+    Service Bus lock_duration maps to ack_deadline_seconds.
+    Service Bus max_delivery_count maps to dead_letter_policy.max_delivery_attempts.
+    Service Bus default_message_ttl maps to message_retention_duration.
+    Service Bus sessions (requires_session) map to Pub/Sub ordering (enable_message_ordering).
+    Service Bus duplicate detection has no direct Pub/Sub equivalent;
+    implement idempotency in the consumer.
+base_confidence: 0.80
+tags:
+  - service-bus
+  - pubsub
+  - terraform
+  - messaging
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_servicebus_namespace" "main" {
+        name                = "myapp-servicebus"
+        location            = azurerm_resource_group.main.location
+        resource_group_name = azurerm_resource_group.main.name
+        sku                 = "Standard"
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "azurerm_servicebus_queue" "orders" {
+        name         = "orders"
+        namespace_id = azurerm_servicebus_namespace.main.id
+
+        max_delivery_count                    = 5
+        lock_duration                         = "PT1M"
+        default_message_ttl                   = "P14D"
+        dead_lettering_on_message_expiration  = true
+      }
+    output: |
+      resource "google_pubsub_topic" "orders" {
+        name    = "orders"
+        project = var.project_id
+
+        message_retention_duration = "1209600s"
+
+        labels = {
+          environment = "production"
+        }
+      }
+
+      resource "google_pubsub_topic" "orders_dlq" {
+        name    = "orders-dlq"
+        project = var.project_id
+      }
+
+      resource "google_pubsub_subscription" "orders" {
+        name    = "orders-sub"
+        topic   = google_pubsub_topic.orders.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "1209600s"
+
+        retry_policy {
+          minimum_backoff = "10s"
+          maximum_backoff = "600s"
+        }
+
+        dead_letter_policy {
+          dead_letter_topic     = google_pubsub_topic.orders_dlq.id
+          max_delivery_attempts = 5
+        }
+
+        expiration_policy {
+          ttl = ""
+        }
+      }

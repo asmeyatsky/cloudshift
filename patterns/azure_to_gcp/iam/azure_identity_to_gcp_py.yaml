@@ -1,0 +1,97 @@
+id: azure-identity-to-gcp-auth-py
+name: "Azure DefaultAzureCredential to GCP google.auth (Python)"
+description: >
+  Transforms azure.identity credential patterns (DefaultAzureCredential,
+  ManagedIdentityCredential, ClientSecretCredential) to GCP google.auth
+  Application Default Credentials or explicit service account authentication.
+source_provider: azure
+target_provider: gcp
+source_service: azure-identity
+target_service: iam
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "from azure.identity import DefaultAzureCredential"
+    - "from azure.identity import ManagedIdentityCredential"
+    - "from azure.identity import ClientSecretCredential"
+    - "from azure.identity import EnvironmentCredential"
+  client_names:
+    - "DefaultAzureCredential()"
+    - "ManagedIdentityCredential()"
+    - "ClientSecretCredential("
+  text_patterns:
+    - "DefaultAzureCredential"
+    - "AZURE_CLIENT_ID"
+    - "AZURE_TENANT_ID"
+    - "AZURE_CLIENT_SECRET"
+transform:
+  replacement_template: |
+    import google.auth
+    from google.auth import default
+
+    # Uses Application Default Credentials (ADC)
+    credentials, project = google.auth.default()
+  import_additions:
+    - "import google.auth"
+  import_removals:
+    - "from azure.identity import DefaultAzureCredential"
+    - "from azure.identity import ManagedIdentityCredential"
+    - "from azure.identity import ClientSecretCredential"
+  notes: >
+    Azure credential type mapping:
+      - DefaultAzureCredential -> google.auth.default() (ADC)
+      - ManagedIdentityCredential -> Automatic on GCE/GKE/Cloud Run (metadata server)
+      - ClientSecretCredential -> google.oauth2.service_account.Credentials.from_service_account_file()
+      - EnvironmentCredential -> ADC with GOOGLE_APPLICATION_CREDENTIALS env var
+    Azure environment variables:
+      - AZURE_CLIENT_ID -> (no equivalent, use ADC)
+      - AZURE_TENANT_ID -> (no equivalent, use ADC)
+      - AZURE_CLIENT_SECRET -> GOOGLE_APPLICATION_CREDENTIALS (path to key file)
+    Azure managed identity maps to GCP attached service account (on Compute/GKE/Cloud Run).
+    For Workload Identity Federation (cross-cloud auth), use
+    google.auth.identity_pool.Credentials.
+base_confidence: 0.82
+tags:
+  - azure-identity
+  - google-auth
+  - python
+  - security
+  - client-init
+  - medium-complexity
+examples:
+  - input: |
+      from azure.identity import DefaultAzureCredential
+      from azure.storage.blob import BlobServiceClient
+
+      credential = DefaultAzureCredential()
+      blob_service = BlobServiceClient(
+          account_url="https://mystorageaccount.blob.core.windows.net",
+          credential=credential
+      )
+    output: |
+      from google.cloud import storage
+
+      # Application Default Credentials are used automatically
+      storage_client = storage.Client()
+  - input: |
+      from azure.identity import ClientSecretCredential
+      from azure.keyvault.secrets import SecretClient
+
+      credential = ClientSecretCredential(
+          tenant_id=os.environ["AZURE_TENANT_ID"],
+          client_id=os.environ["AZURE_CLIENT_ID"],
+          client_secret=os.environ["AZURE_CLIENT_SECRET"]
+      )
+      secret_client = SecretClient(
+          vault_url="https://myvault.vault.azure.net",
+          credential=credential
+      )
+    output: |
+      from google.oauth2 import service_account
+      from google.cloud import secretmanager
+
+      credentials = service_account.Credentials.from_service_account_file(
+          os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+      )
+      sm_client = secretmanager.SecretManagerServiceClient(credentials=credentials)

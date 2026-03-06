@@ -1,0 +1,58 @@
+id: s3-get-object-to-gcs-download-py
+name: "S3 get_object to GCS download_as_bytes (Python)"
+description: >
+  Transforms S3 get_object calls to GCS blob.download_as_bytes or
+  blob.download_as_text. Maps Bucket/Key to bucket/blob path.
+  The S3 response streaming body is replaced with direct byte content.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "get_object"
+    - "download_fileobj"
+    - "download_file"
+  text_patterns:
+    - "Bucket="
+    - "Key="
+    - "['Body'].read()"
+transform:
+  replacement_template: |
+    bucket = storage_client.bucket("{{bucket_name}}")
+    blob = bucket.blob("{{key}}")
+    content = blob.download_as_bytes()
+  import_additions: []
+  import_removals: []
+  notes: >
+    S3 get_object returns a dict with a StreamingBody under 'Body' that must be
+    .read(). GCS download_as_bytes returns bytes directly, which is simpler.
+    For text content, use blob.download_as_text(encoding='utf-8').
+    For downloading to a file, use blob.download_to_filename('local_path').
+    S3 Range parameter (partial reads) maps to blob.download_as_bytes(start=, end=).
+base_confidence: 0.90
+tags:
+  - s3
+  - cloud-storage
+  - python
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      response = s3_client.get_object(Bucket='my-bucket', Key='data/file.json')
+      content = response['Body'].read()
+      data = json.loads(content)
+    output: |
+      bucket = storage_client.bucket("my-bucket")
+      blob = bucket.blob("data/file.json")
+      content = blob.download_as_bytes()
+      data = json.loads(content)
+  - input: |
+      s3_client.download_file('my-bucket', 'reports/report.csv', '/tmp/report.csv')
+    output: |
+      bucket = storage_client.bucket("my-bucket")
+      blob = bucket.blob("reports/report.csv")
+      blob.download_to_filename("/tmp/report.csv")

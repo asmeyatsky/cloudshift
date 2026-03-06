@@ -1,0 +1,165 @@
+id: rds-instance-to-cloud-sql-tf
+name: "RDS Instance to Cloud SQL (Terraform)"
+description: >
+  Transforms aws_db_instance (RDS) to google_sql_database_instance (Cloud SQL).
+  Maps engine types (mysql, postgres), instance classes, storage settings,
+  multi-AZ to regional availability, and parameter groups to database flags.
+source_provider: aws
+target_provider: gcp
+source_service: rds
+target_service: cloud-sql
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_db_instance"
+    - "aws_db_subnet_group"
+    - "aws_db_parameter_group"
+  text_patterns:
+    - "engine"
+    - "instance_class"
+    - "allocated_storage"
+    - "multi_az"
+transform:
+  replacement_template: |
+    resource "google_sql_database_instance" "{{resource_name}}" {
+      name             = "{{instance_name}}"
+      database_version = "{{database_version}}"
+      region           = "{{region}}"
+      project          = var.project_id
+
+      settings {
+        tier              = "{{tier}}"
+        availability_type = "{{availability_type}}"
+        disk_size         = {{disk_size}}
+        disk_type         = "PD_SSD"
+        disk_autoresize   = true
+
+        ip_configuration {
+          ipv4_enabled    = false
+          private_network = "{{vpc_network}}"
+        }
+
+        backup_configuration {
+          enabled                        = true
+          binary_log_enabled             = {{binary_log}}
+          point_in_time_recovery_enabled = true
+          start_time                     = "03:00"
+        }
+
+        database_flags {
+          name  = "{{flag_name}}"
+          value = "{{flag_value}}"
+        }
+
+        maintenance_window {
+          day          = 7
+          hour         = 3
+          update_track = "stable"
+        }
+      }
+
+      deletion_protection = {{deletion_protection}}
+    }
+
+    resource "google_sql_database" "{{db_name}}" {
+      name     = "{{database_name}}"
+      instance = google_sql_database_instance.{{resource_name}}.name
+    }
+
+    resource "google_sql_user" "{{user_name}}" {
+      name     = "{{username}}"
+      instance = google_sql_database_instance.{{resource_name}}.name
+      password = var.db_password
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    RDS instance class mapping: db.t3.micro -> db-f1-micro, db.t3.small -> db-g1-small,
+    db.m5.large -> db-custom-2-7680, db.r5.large -> db-custom-2-13312.
+    Engine mapping: mysql -> MYSQL_8_0, postgres -> POSTGRES_15, mariadb -> MYSQL_8_0 (partial).
+    RDS multi_az=true maps to availability_type=REGIONAL.
+    RDS security groups map to Cloud SQL authorized networks or private IP config.
+    RDS parameter groups map to Cloud SQL database_flags.
+    aws_db_subnet_group is replaced by private_network in ip_configuration.
+base_confidence: 0.78
+tags:
+  - rds
+  - cloud-sql
+  - terraform
+  - database
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_db_instance" "main" {
+        identifier           = "production-db"
+        engine               = "postgres"
+        engine_version       = "15.4"
+        instance_class       = "db.r5.large"
+        allocated_storage    = 100
+        max_allocated_storage = 500
+        storage_type         = "gp3"
+
+        db_name  = "myapp"
+        username = "admin"
+        password = var.db_password
+
+        multi_az               = true
+        db_subnet_group_name   = aws_db_subnet_group.main.name
+        vpc_security_group_ids = [aws_security_group.db.id]
+
+        backup_retention_period = 7
+        backup_window          = "03:00-04:00"
+
+        deletion_protection = true
+
+        tags = {
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_sql_database_instance" "main" {
+        name             = "production-db"
+        database_version = "POSTGRES_15"
+        region           = "us-central1"
+        project          = var.project_id
+
+        settings {
+          tier              = "db-custom-2-13312"
+          availability_type = "REGIONAL"
+          disk_size         = 100
+          disk_type         = "PD_SSD"
+          disk_autoresize   = true
+
+          ip_configuration {
+            ipv4_enabled    = false
+            private_network = google_compute_network.main.id
+          }
+
+          backup_configuration {
+            enabled                        = true
+            point_in_time_recovery_enabled = true
+            start_time                     = "03:00"
+          }
+
+          maintenance_window {
+            day          = 7
+            hour         = 3
+            update_track = "stable"
+          }
+        }
+
+        deletion_protection = true
+      }
+
+      resource "google_sql_database" "myapp" {
+        name     = "myapp"
+        instance = google_sql_database_instance.main.name
+      }
+
+      resource "google_sql_user" "admin" {
+        name     = "admin"
+        instance = google_sql_database_instance.main.name
+        password = var.db_password
+      }

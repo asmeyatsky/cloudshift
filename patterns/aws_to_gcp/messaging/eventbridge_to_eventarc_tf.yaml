@@ -1,0 +1,111 @@
+id: eventbridge-to-eventarc-tf
+name: "EventBridge to Eventarc (Terraform)"
+description: >
+  Transforms aws_cloudwatch_event_rule and aws_cloudwatch_event_target
+  to google_eventarc_trigger. Maps EventBridge event patterns to Eventarc
+  matching criteria, and targets to Eventarc destinations.
+source_provider: aws
+target_provider: gcp
+source_service: eventbridge
+target_service: eventarc
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_cloudwatch_event_rule"
+    - "aws_cloudwatch_event_target"
+  text_patterns:
+    - "event_pattern"
+    - "schedule_expression"
+    - "event_bus_name"
+transform:
+  replacement_template: |
+    resource "google_eventarc_trigger" "{{resource_name}}" {
+      name     = "{{trigger_name}}"
+      location = "{{region}}"
+      project  = var.project_id
+
+      matching_criteria {
+        attribute = "type"
+        value     = "{{event_type}}"
+      }
+
+      destination {
+        cloud_run_service {
+          service = "{{service_name}}"
+          region  = "{{region}}"
+        }
+      }
+
+      service_account = "{{service_account_email}}"
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    EventBridge event patterns map to Eventarc matching_criteria.
+    EventBridge schedule expressions do NOT map to Eventarc — use Cloud Scheduler instead.
+    EventBridge targets:
+      - Lambda -> Cloud Functions or Cloud Run via Eventarc
+      - SQS -> Pub/Sub topic via Eventarc
+      - Step Functions -> Workflows via Eventarc
+      - ECS -> Cloud Run via Eventarc
+    EventBridge event buses have no direct equivalent; Eventarc uses channels.
+    EventBridge input transformers map to Eventarc CloudEvent transformation (limited).
+    EventBridge archive/replay has no direct Eventarc equivalent.
+base_confidence: 0.65
+tags:
+  - eventbridge
+  - eventarc
+  - terraform
+  - messaging
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_cloudwatch_event_rule" "s3_upload" {
+        name        = "s3-upload-trigger"
+        description = "Trigger on S3 object creation"
+
+        event_pattern = jsonencode({
+          source      = ["aws.s3"]
+          detail-type = ["Object Created"]
+          detail = {
+            bucket = { name = ["my-bucket"] }
+          }
+        })
+      }
+
+      resource "aws_cloudwatch_event_target" "process" {
+        rule      = aws_cloudwatch_event_rule.s3_upload.name
+        target_id = "process-upload"
+        arn       = aws_lambda_function.process.arn
+      }
+    output: |
+      resource "google_eventarc_trigger" "gcs_upload" {
+        name     = "gcs-upload-trigger"
+        location = "us-central1"
+        project  = var.project_id
+
+        matching_criteria {
+          attribute = "type"
+          value     = "google.cloud.storage.object.v1.finalized"
+        }
+
+        matching_criteria {
+          attribute = "bucket"
+          value     = "my-bucket"
+        }
+
+        destination {
+          cloud_run_service {
+            service = google_cloud_run_v2_service.process.name
+            region  = "us-central1"
+          }
+        }
+
+        service_account = google_service_account.eventarc.email
+      }

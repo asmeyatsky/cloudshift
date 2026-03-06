@@ -1,0 +1,63 @@
+id: s3-put-object-to-gcs-save-ts
+name: "S3 PutObjectCommand to GCS file.save (TypeScript)"
+description: >
+  Transforms S3 PutObjectCommand to GCS file.save. Maps Bucket/Key/Body
+  parameters to bucket.file(name).save(data) pattern.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "@aws-sdk/client-s3"
+    - "PutObjectCommand"
+  method_names:
+    - "PutObjectCommand"
+    - "send"
+  text_patterns:
+    - "new PutObjectCommand"
+    - "Bucket:"
+    - "Key:"
+    - "Body:"
+transform:
+  replacement_template: |
+    const bucket = storage.bucket("{{bucket_name}}");
+    const file = bucket.file("{{key}}");
+    await file.save({{body}}, {
+      contentType: "{{content_type}}",
+    });
+  import_additions: []
+  import_removals:
+    - "import { PutObjectCommand } from '@aws-sdk/client-s3';"
+  notes: >
+    S3 PutObjectCommand is sent via client.send(command) pattern.
+    GCS uses the direct method file.save(). The Body in S3 can be Buffer,
+    string, or ReadableStream. GCS file.save() accepts Buffer or string.
+    For streams, use file.createWriteStream() instead.
+base_confidence: 0.90
+tags:
+  - s3
+  - cloud-storage
+  - typescript
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      import { PutObjectCommand } from '@aws-sdk/client-s3';
+
+      const command = new PutObjectCommand({
+        Bucket: 'my-bucket',
+        Key: 'data/file.json',
+        Body: JSON.stringify(data),
+        ContentType: 'application/json',
+      });
+      await s3Client.send(command);
+    output: |
+      const bucket = storage.bucket("my-bucket");
+      const file = bucket.file("data/file.json");
+      await file.save(JSON.stringify(data), {
+        contentType: "application/json",
+      });

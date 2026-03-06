@@ -1,0 +1,114 @@
+id: azure-functions-to-cloud-functions-py
+name: "Azure Functions to Cloud Functions (Python)"
+description: >
+  Transforms Azure Functions Python handler (using azure.functions SDK) to
+  Google Cloud Functions (using functions-framework). Maps HttpRequest/HttpResponse
+  to flask.Request and response tuples. Covers HTTP triggers and other bindings.
+source_provider: azure
+target_provider: gcp
+source_service: azure-functions
+target_service: cloud-functions
+language: python
+construct_type: function_handler
+match_pattern:
+  imports:
+    - "import azure.functions as func"
+    - "import azure.functions"
+    - "from azure.functions"
+  text_patterns:
+    - "func.HttpRequest"
+    - "func.HttpResponse"
+    - "func.Blueprint"
+    - "@app.route"
+    - "@app.function_name"
+  method_names:
+    - "main"
+transform:
+  replacement_template: |
+    import functions_framework
+    import json
+
+    @functions_framework.http
+    def {{function_name}}(request):
+        """HTTP Cloud Function."""
+        {{body}}
+
+        return (json.dumps(response_body), status_code, headers)
+  import_additions:
+    - "import functions_framework"
+  import_removals:
+    - "import azure.functions as func"
+  notes: >
+    Azure Functions use func.HttpRequest with methods like get_json(), get_body(),
+    params.get(). Cloud Functions use flask.Request with get_json(), data, args.get().
+    Azure func.HttpResponse(body, status_code, headers) maps to returning a tuple
+    (body, status_code, headers) or flask.Response.
+    Azure function.json bindings file has no Cloud Functions equivalent —
+    triggers are configured via deployment (gcloud functions deploy --trigger-*).
+    Azure timer triggers map to Cloud Scheduler + Cloud Functions.
+    Azure queue/blob triggers map to Pub/Sub or Eventarc triggers.
+    The Azure Functions programming model v2 (decorators) is structurally
+    closer to Cloud Functions than v1 (function.json).
+base_confidence: 0.78
+tags:
+  - azure-functions
+  - cloud-functions
+  - python
+  - compute
+  - serverless
+  - medium-complexity
+examples:
+  - input: |
+      import azure.functions as func
+      import json
+      import logging
+
+      app = func.FunctionApp()
+
+      @app.route(route="hello", auth_level=func.AuthLevel.ANONYMOUS)
+      def hello(req: func.HttpRequest) -> func.HttpResponse:
+          logging.info("Processing hello request")
+
+          name = req.params.get("name")
+          if not name:
+              try:
+                  req_body = req.get_json()
+                  name = req_body.get("name")
+              except ValueError:
+                  pass
+
+          if name:
+              return func.HttpResponse(
+                  json.dumps({"message": f"Hello, {name}!"}),
+                  status_code=200,
+                  mimetype="application/json"
+              )
+          else:
+              return func.HttpResponse(
+                  "Please pass a name",
+                  status_code=400
+              )
+    output: |
+      import functions_framework
+      import json
+      import logging
+
+      @functions_framework.http
+      def hello(request):
+          """HTTP Cloud Function."""
+          logging.info("Processing hello request")
+
+          name = request.args.get("name")
+          if not name:
+              request_json = request.get_json(silent=True)
+              if request_json:
+                  name = request_json.get("name")
+
+          if name:
+              return (
+                  json.dumps({"message": f"Hello, {name}!"}),
+                  200,
+                  {"Content-Type": "application/json"}
+              )
+          else:
+              return ("Please pass a name", 400)

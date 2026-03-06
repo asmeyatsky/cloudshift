@@ -1,0 +1,103 @@
+id: iam-role-to-gcp-iam-member-tf
+name: "AWS IAM Role to GCP IAM Member (Terraform)"
+description: >
+  Transforms aws_iam_role with assume_role_policy to google_service_account
+  and google_project_iam_member. AWS IAM roles are assumed by principals via
+  trust policies; GCP uses service accounts with IAM bindings.
+source_provider: aws
+target_provider: gcp
+source_service: iam
+target_service: iam
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_iam_role"
+    - "aws_iam_role_policy_attachment"
+    - "aws_iam_instance_profile"
+  text_patterns:
+    - "assume_role_policy"
+    - "sts:AssumeRole"
+    - "policy_arn"
+transform:
+  replacement_template: |
+    resource "google_service_account" "{{resource_name}}" {
+      account_id   = "{{service_account_id}}"
+      display_name = "{{display_name}}"
+      project      = var.project_id
+    }
+
+    resource "google_project_iam_member" "{{binding_name}}" {
+      project = var.project_id
+      role    = "{{role}}"
+      member  = "serviceAccount:${google_service_account.{{resource_name}}.email}"
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    AWS IAM role = GCP service account + IAM bindings.
+    AWS trust policy (who can assume the role) maps to:
+      - For EC2: attach service account to compute instance
+      - For Lambda: attach service account to Cloud Function
+      - For ECS: attach service account to Cloud Run service
+      - For cross-account: use Workload Identity Federation
+    AWS managed policies map to GCP predefined roles:
+      - AmazonS3ReadOnlyAccess -> roles/storage.objectViewer
+      - AmazonDynamoDBFullAccess -> roles/datastore.user
+      - AmazonSQSFullAccess -> roles/pubsub.editor
+      - CloudWatchLogsFullAccess -> roles/logging.admin
+    AWS instance profiles are not needed in GCP (service accounts attach directly).
+base_confidence: 0.72
+tags:
+  - iam
+  - service-account
+  - terraform
+  - security
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_iam_role" "lambda_exec" {
+        name = "lambda-execution-role"
+
+        assume_role_policy = jsonencode({
+          Version = "2012-10-17"
+          Statement = [
+            {
+              Action = "sts:AssumeRole"
+              Effect = "Allow"
+              Principal = {
+                Service = "lambda.amazonaws.com"
+              }
+            }
+          ]
+        })
+      }
+
+      resource "aws_iam_role_policy_attachment" "lambda_logs" {
+        role       = aws_iam_role.lambda_exec.name
+        policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      }
+
+      resource "aws_iam_role_policy_attachment" "lambda_s3" {
+        role       = aws_iam_role.lambda_exec.name
+        policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+      }
+    output: |
+      resource "google_service_account" "cloud_function" {
+        account_id   = "cloud-function-sa"
+        display_name = "Cloud Function Service Account"
+        project      = var.project_id
+      }
+
+      resource "google_project_iam_member" "function_logging" {
+        project = var.project_id
+        role    = "roles/logging.logWriter"
+        member  = "serviceAccount:${google_service_account.cloud_function.email}"
+      }
+
+      resource "google_project_iam_member" "function_storage" {
+        project = var.project_id
+        role    = "roles/storage.objectViewer"
+        member  = "serviceAccount:${google_service_account.cloud_function.email}"
+      }

@@ -1,0 +1,64 @@
+id: s3-put-object-to-gcs-upload-py
+name: "S3 put_object to GCS upload_from_string (Python)"
+description: >
+  Transforms S3 put_object calls to GCS blob.upload_from_string.
+  Maps Bucket/Key parameters to bucket/blob path, Body to the data argument,
+  and ContentType to content_type parameter.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "put_object"
+    - "upload_fileobj"
+    - "upload_file"
+  text_patterns:
+    - "Bucket="
+    - "Key="
+    - "Body="
+transform:
+  replacement_template: |
+    bucket = storage_client.bucket("{{bucket_name}}")
+    blob = bucket.blob("{{key}}")
+    blob.upload_from_string({{body}}, content_type="{{content_type}}")
+  import_additions: []
+  import_removals: []
+  notes: >
+    S3 put_object accepts Body as bytes/str/file-like. GCS upload_from_string
+    accepts bytes or string. For file-like objects, use blob.upload_from_file()
+    instead. For local files, use blob.upload_from_filename().
+    S3 ServerSideEncryption parameter maps to bucket-level or blob-level
+    encryption settings in GCS (CMEK via kms_key_name).
+base_confidence: 0.90
+tags:
+  - s3
+  - cloud-storage
+  - python
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      s3_client.put_object(
+          Bucket='my-bucket',
+          Key='data/file.json',
+          Body=json.dumps(data),
+          ContentType='application/json'
+      )
+    output: |
+      bucket = storage_client.bucket("my-bucket")
+      blob = bucket.blob("data/file.json")
+      blob.upload_from_string(json.dumps(data), content_type="application/json")
+  - input: |
+      s3_client.upload_fileobj(
+          file_obj,
+          'my-bucket',
+          'uploads/document.pdf'
+      )
+    output: |
+      bucket = storage_client.bucket("my-bucket")
+      blob = bucket.blob("uploads/document.pdf")
+      blob.upload_from_file(file_obj)

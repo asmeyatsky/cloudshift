@@ -1,0 +1,81 @@
+id: aws-lambda-function-to-cloud-function-tf
+name: "AWS Lambda Function to Cloud Function (Terraform)"
+description: >
+  Transforms aws_lambda_function Terraform resource to
+  google_cloudfunctions2_function. Maps runtime, handler, and source
+  code configuration to GCP equivalents.
+source_provider: aws
+target_provider: gcp
+source_service: lambda
+target_service: cloud-functions
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_lambda_function"
+    - "aws_lambda_permission"
+    - "aws_lambda_event_source_mapping"
+  text_patterns:
+    - "aws_lambda_function"
+    - "runtime"
+    - "handler"
+transform:
+  replacement_template: |
+    resource "google_cloudfunctions2_function" "{{param:function_name}}" {
+      name     = "{{param:function_name}}"
+      location = var.region
+
+      build_config {
+        runtime     = "{{param:runtime}}"
+        entry_point = "{{param:handler}}"
+        source {
+          storage_source {
+            bucket = google_storage_bucket.functions_source.name
+            object = google_storage_bucket_object.function_zip.name
+          }
+        }
+      }
+
+      service_config {
+        max_instance_count = 100
+        available_memory   = "256M"
+        timeout_seconds    = 60
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Lambda uses a zip file or container image directly. Cloud Functions v2
+    reads source from a GCS bucket. You need to create a GCS bucket and
+    upload the function source as a zip object.
+base_confidence: 0.85
+tags:
+  - lambda
+  - cloud-functions
+  - terraform
+  - compute
+  - serverless
+examples:
+  - input: |
+      resource "aws_lambda_function" "processor" {
+        function_name = "data-processor"
+        runtime       = "python3.13"
+        handler       = "main.handler"
+        filename      = "lambda.zip"
+      }
+    output: |
+      resource "google_cloudfunctions2_function" "processor" {
+        name     = "data-processor"
+        location = var.region
+
+        build_config {
+          runtime     = "python313"
+          entry_point = "main.handler"
+          source {
+            storage_source {
+              bucket = google_storage_bucket.functions_source.name
+              object = google_storage_bucket_object.function_zip.name
+            }
+          }
+        }
+      }

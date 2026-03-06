@@ -1,0 +1,66 @@
+id: sqs-send-message-to-pubsub-publish-py
+name: "SQS send_message to Pub/Sub publish (Python)"
+description: >
+  Transforms SQS send_message calls to Pub/Sub publisher.publish.
+  Maps QueueUrl to topic_path, MessageBody to data, and MessageAttributes
+  to Pub/Sub attributes.
+source_provider: aws
+target_provider: gcp
+source_service: sqs
+target_service: pubsub
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "send_message"
+    - "send_message_batch"
+  text_patterns:
+    - "QueueUrl="
+    - "MessageBody="
+    - "MessageAttributes="
+transform:
+  replacement_template: |
+    topic_path = publisher.topic_path("{{project_id}}", "{{topic_name}}")
+    future = publisher.publish(
+        topic_path,
+        data={{message_body}}.encode("utf-8"),
+        {{attributes}}
+    )
+    message_id = future.result()
+  import_additions: []
+  import_removals: []
+  notes: >
+    SQS MessageBody is a string; Pub/Sub data must be bytes (encode to UTF-8).
+    SQS MessageAttributes (typed key-value) map to Pub/Sub attributes (string key-value only).
+    SQS DelaySeconds maps to Pub/Sub topic-level message retention, but there is no
+    per-message delay — use Cloud Tasks for delayed delivery.
+    SQS MessageGroupId (FIFO) maps to Pub/Sub ordering_key parameter.
+    publisher.publish() returns a Future; call .result() to get the message ID.
+base_confidence: 0.85
+tags:
+  - sqs
+  - pubsub
+  - python
+  - messaging
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      sqs.send_message(
+          QueueUrl=queue_url,
+          MessageBody=json.dumps({"order_id": "12345", "action": "process"}),
+          MessageAttributes={
+              'Type': {
+                  'DataType': 'String',
+                  'StringValue': 'order'
+              }
+          }
+      )
+    output: |
+      topic_path = publisher.topic_path("my-project", "orders")
+      future = publisher.publish(
+          topic_path,
+          data=json.dumps({"order_id": "12345", "action": "process"}).encode("utf-8"),
+          Type="order"
+      )
+      message_id = future.result()

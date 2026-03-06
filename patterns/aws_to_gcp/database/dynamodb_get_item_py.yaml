@@ -1,0 +1,72 @@
+id: dynamodb-get-item-to-firestore-get-py
+name: "DynamoDB get_item to Firestore document.get (Python)"
+description: >
+  Transforms DynamoDB get_item calls to Firestore document.get.
+  Maps the Key parameter (partition key + optional sort key) to a
+  Firestore document reference lookup.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "get_item"
+  text_patterns:
+    - "Key="
+    - "TableName="
+    - "['Item']"
+transform:
+  replacement_template: |
+    doc_ref = db.collection("{{collection}}").document("{{document_id}}")
+    doc = doc_ref.get()
+    if doc.exists:
+        data = doc.to_dict()
+  import_additions: []
+  import_removals: []
+  notes: >
+    DynamoDB get_item returns a response dict with 'Item' key (None if not found).
+    Firestore document.get() returns a DocumentSnapshot; use .exists to check
+    presence and .to_dict() to get the data. DynamoDB's ConsistentRead=True has
+    no direct equivalent in Firestore (Firestore reads are always strongly
+    consistent). ProjectionExpression maps to field_paths parameter in get().
+base_confidence: 0.85
+tags:
+  - dynamodb
+  - firestore
+  - python
+  - database
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      response = table.get_item(
+          Key={
+              'user_id': 'u123'
+          }
+      )
+      item = response.get('Item')
+      if item:
+          print(item['name'])
+    output: |
+      doc_ref = db.collection("users").document("u123")
+      doc = doc_ref.get()
+      if doc.exists:
+          data = doc.to_dict()
+          print(data["name"])
+  - input: |
+      response = dynamodb_client.get_item(
+          TableName='users',
+          Key={
+              'user_id': {'S': 'u123'}
+          },
+          ProjectionExpression='#n, email',
+          ExpressionAttributeNames={'#n': 'name'}
+      )
+      item = response.get('Item', {})
+    output: |
+      doc_ref = db.collection("users").document("u123")
+      doc = doc_ref.get(field_paths=["name", "email"])
+      if doc.exists:
+          data = doc.to_dict()

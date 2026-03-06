@@ -1,0 +1,159 @@
+id: ecs-service-to-cloud-run-tf
+name: "ECS Fargate Service to Cloud Run (Terraform)"
+description: >
+  Transforms an aws_ecs_service with Fargate launch type and associated
+  aws_ecs_task_definition to a google_cloud_run_v2_service. Maps container
+  definitions, CPU/memory settings, environment variables, and load balancer
+  configuration to Cloud Run equivalents.
+source_provider: aws
+target_provider: gcp
+source_service: ecs
+target_service: cloud-run
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_ecs_service"
+    - "aws_ecs_task_definition"
+  text_patterns:
+    - "launch_type"
+    - "FARGATE"
+    - "container_definitions"
+transform:
+  replacement_template: |
+    resource "google_cloud_run_v2_service" "{{resource_name}}" {
+      name     = "{{service_name}}"
+      location = "{{region}}"
+
+      template {
+        scaling {
+          min_instance_count = {{min_count}}
+          max_instance_count = {{max_count}}
+        }
+
+        containers {
+          image = "{{container_image}}"
+
+          ports {
+            container_port = {{container_port}}
+          }
+
+          resources {
+            limits = {
+              cpu    = "{{cpu}}"
+              memory = "{{memory}}"
+            }
+          }
+
+          env {
+            name  = "{{env_name}}"
+            value = "{{env_value}}"
+          }
+        }
+
+        service_account = "{{service_account_email}}"
+      }
+
+      traffic {
+        type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+        percent = 100
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    ECS task CPU/memory units differ from Cloud Run. ECS uses CPU units (1024 = 1 vCPU)
+    and MiB; Cloud Run uses vCPU count strings ("1", "2") and memory strings ("512Mi", "1Gi").
+    ECS task roles map to Cloud Run service accounts. ALB/target group configuration
+    is not needed as Cloud Run provides built-in HTTPS load balancing.
+    ECS service discovery maps to Cloud Run's automatic URL assignment.
+    aws_ecs_cluster resource has no direct equivalent (Cloud Run is serverless).
+base_confidence: 0.72
+tags:
+  - ecs
+  - cloud-run
+  - terraform
+  - compute
+  - containers
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_ecs_task_definition" "app" {
+        family                   = "app"
+        network_mode             = "awsvpc"
+        requires_compatibilities = ["FARGATE"]
+        cpu                      = "512"
+        memory                   = "1024"
+
+        container_definitions = jsonencode([
+          {
+            name      = "app"
+            image     = "123456789.dkr.ecr.us-east-1.amazonaws.com/app:latest"
+            portMappings = [{ containerPort = 8080 }]
+            environment = [
+              { name = "DB_HOST", value = "mydb.cluster.us-east-1.rds.amazonaws.com" }
+            ]
+          }
+        ])
+
+        execution_role_arn = aws_iam_role.ecs_execution.arn
+        task_role_arn      = aws_iam_role.ecs_task.arn
+      }
+
+      resource "aws_ecs_service" "app" {
+        name            = "app-service"
+        cluster         = aws_ecs_cluster.main.id
+        task_definition = aws_ecs_task_definition.app.arn
+        desired_count   = 2
+        launch_type     = "FARGATE"
+
+        network_configuration {
+          subnets         = aws_subnet.private[*].id
+          security_groups = [aws_security_group.ecs.id]
+        }
+
+        load_balancer {
+          target_group_arn = aws_lb_target_group.app.arn
+          container_name   = "app"
+          container_port   = 8080
+        }
+      }
+    output: |
+      resource "google_cloud_run_v2_service" "app" {
+        name     = "app-service"
+        location = "us-central1"
+
+        template {
+          scaling {
+            min_instance_count = 2
+            max_instance_count = 10
+          }
+
+          containers {
+            image = "us-central1-docker.pkg.dev/my-project/app-repo/app:latest"
+
+            ports {
+              container_port = 8080
+            }
+
+            resources {
+              limits = {
+                cpu    = "1"
+                memory = "1Gi"
+              }
+            }
+
+            env {
+              name  = "DB_HOST"
+              value = "10.0.0.3"
+            }
+          }
+
+          service_account = google_service_account.app.email
+        }
+
+        traffic {
+          type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+          percent = 100
+        }
+      }

@@ -1,0 +1,101 @@
+{
+  "name": "cloudshift",
+  "displayName": "CloudShift",
+  "description": "Detect and refactor cloud infrastructure constructs across providers",
+  "version": "0.1.0",
+  "publisher": "cloudshift",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:python",
+    "onLanguage:typescript",
+    "onLanguage:terraform",
+    "workspaceContains:*.tf"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cloudshift.scanProject",
+        "title": "CloudShift: Scan Project"
+      },
+      {
+        "command": "cloudshift.refactorFile",
+        "title": "CloudShift: Refactor File"
+      },
+      {
+        "command": "cloudshift.refactorSelection",
+        "title": "CloudShift: Refactor Selection"
+      },
+      {
+        "command": "cloudshift.validate",
+        "title": "CloudShift: Validate Transformations"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "cloudshift.refactorSelection",
+          "when": "editorHasSelection",
+          "group": "cloudshift@1"
+        },
+        {
+          "command": "cloudshift.refactorFile",
+          "group": "cloudshift@2"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cloudshift-explorer",
+          "title": "CloudShift",
+          "icon": "$(cloud)"
+        }
+      ]
+    },
+    "views": {
+      "cloudshift-explorer": [
+        {
+          "id": "manifestTree",
+          "name": "Manifest"
+        },
+        {
+          "id": "validationTree",
+          "name": "Validation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CloudShift",
+      "properties": {
+        "cloudshift.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "URL of the CloudShift FastAPI backend server"
+        },
+        "cloudshift.autoScan": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically scan files on open and save"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.5",
+    "@types/vscode": "^1.96.0",
+    "esbuild": "^0.24.0",
+    "typescript": "~5.7.0"
+  }
+}

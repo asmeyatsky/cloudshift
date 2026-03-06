@@ -1,0 +1,42 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../patterns:/app/patterns
+    environment:
+      - CLOUDSHIFT_PATTERNS_DIR=/app/patterns
+      - CLOUDSHIFT_LLM_ENABLED=false
+      - CLOUDSHIFT_LOG_LEVEL=info
+    depends_on:
+      - ollama
+    profiles:
+      - full
+
+  app-standalone:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../patterns:/app/patterns
+    environment:
+      - CLOUDSHIFT_PATTERNS_DIR=/app/patterns
+      - CLOUDSHIFT_LLM_ENABLED=false
+      - CLOUDSHIFT_LOG_LEVEL=info
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    profiles:
+      - full
+
+volumes:
+  ollama-data:

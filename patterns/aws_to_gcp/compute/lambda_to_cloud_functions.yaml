@@ -1,0 +1,142 @@
+id: lambda-handler-to-cloud-functions-py
+name: "AWS Lambda Handler to Cloud Functions (Python)"
+description: >
+  Transforms an AWS Lambda Python handler function signature and event/context
+  objects to a Google Cloud Functions HTTP function or event-driven function.
+  Lambda uses event/context parameters while Cloud Functions uses flask.Request
+  for HTTP triggers or CloudEvent for event triggers.
+source_provider: aws
+target_provider: gcp
+source_service: lambda
+target_service: cloud-functions
+language: python
+construct_type: function_handler
+match_pattern:
+  text_patterns:
+    - "def lambda_handler(event, context)"
+    - "def handler(event, context)"
+  imports:
+    - "import json"
+  method_names:
+    - "lambda_handler"
+transform:
+  replacement_template: |
+    import functions_framework
+
+    @functions_framework.http
+    def {{function_name}}(request):
+        """HTTP Cloud Function."""
+        request_json = request.get_json(silent=True)
+        request_args = request.args
+
+        {{body}}
+
+        return (json.dumps(response_body), 200, {"Content-Type": "application/json"})
+  import_additions:
+    - "import functions_framework"
+  import_removals: []
+  notes: >
+    Lambda returns a dict with statusCode and body. Cloud Functions returns
+    a tuple of (body, status_code, headers) or a flask.Response object.
+    Event-driven functions use @functions_framework.cloud_event instead of @http.
+    The context object is not available; use request headers for metadata.
+base_confidence: 0.80
+tags:
+  - lambda
+  - cloud-functions
+  - python
+  - compute
+  - serverless
+  - medium-complexity
+examples:
+  - input: |
+      import json
+
+      def lambda_handler(event, context):
+          name = event.get("name", "World")
+          return {
+              "statusCode": 200,
+              "body": json.dumps({"message": f"Hello, {name}!"})
+          }
+    output: |
+      import json
+      import functions_framework
+
+      @functions_framework.http
+      def hello(request):
+          """HTTP Cloud Function."""
+          request_json = request.get_json(silent=True)
+          name = request_json.get("name", "World") if request_json else "World"
+          return (json.dumps({"message": f"Hello, {name}!"}), 200, {"Content-Type": "application/json"})
+---
+id: lambda-handler-to-cloud-functions-ts
+name: "AWS Lambda Handler to Cloud Functions (TypeScript)"
+description: >
+  Transforms an AWS Lambda TypeScript handler function to a Google Cloud Functions
+  HTTP function. Lambda uses APIGatewayProxyEvent and Context types while Cloud
+  Functions uses express-compatible Request and Response objects.
+source_provider: aws
+target_provider: gcp
+source_service: lambda
+target_service: cloud-functions
+language: typescript
+construct_type: function_handler
+match_pattern:
+  imports:
+    - "from 'aws-lambda'"
+    - "aws-lambda"
+  text_patterns:
+    - "APIGatewayProxyEvent"
+    - "APIGatewayProxyResult"
+    - "export const handler"
+    - "export async function handler"
+  method_names:
+    - "handler"
+transform:
+  replacement_template: |
+    import { HttpFunction } from '@google-cloud/functions-framework';
+    import { Request, Response } from 'express';
+
+    export const {{function_name}}: HttpFunction = async (req: Request, res: Response) => {
+      const body = req.body;
+
+      {{body}}
+
+      res.status(200).json(responseBody);
+    };
+  import_additions:
+    - "import { HttpFunction } from '@google-cloud/functions-framework';"
+    - "import { Request, Response } from 'express';"
+  import_removals:
+    - "import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';"
+  notes: >
+    Cloud Functions uses express-style req/res pattern instead of Lambda's
+    event/context return-value pattern. Install @google-cloud/functions-framework.
+    For background functions use CloudEvent type instead of HttpFunction.
+base_confidence: 0.78
+tags:
+  - lambda
+  - cloud-functions
+  - typescript
+  - compute
+  - serverless
+  - medium-complexity
+examples:
+  - input: |
+      import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+
+      export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+        const body = JSON.parse(event.body || '{}');
+        return {
+          statusCode: 200,
+          body: JSON.stringify({ message: `Hello, ${body.name}!` }),
+        };
+      };
+    output: |
+      import { HttpFunction } from '@google-cloud/functions-framework';
+      import { Request, Response } from 'express';
+
+      export const hello: HttpFunction = async (req: Request, res: Response) => {
+        const body = req.body;
+        res.status(200).json({ message: `Hello, ${body.name}!` });
+      };

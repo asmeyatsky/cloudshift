@@ -1,0 +1,67 @@
+id: azure-blob-download-to-gcs-download-py
+name: "Azure Blob download_blob to GCS download_as_bytes (Python)"
+description: >
+  Transforms Azure Blob Storage download_blob calls to GCS
+  blob.download_as_bytes or blob.download_to_filename. Maps the
+  StorageStreamDownloader pattern to direct byte retrieval.
+source_provider: azure
+target_provider: gcp
+source_service: blob-storage
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "download_blob"
+    - "readall"
+    - "readinto"
+  text_patterns:
+    - "download_blob"
+    - ".readall()"
+    - "StorageStreamDownloader"
+transform:
+  replacement_template: |
+    bucket = storage_client.bucket("{{bucket_name}}")
+    blob = bucket.blob("{{blob_name}}")
+    content = blob.download_as_bytes()
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure download_blob() returns a StorageStreamDownloader that requires
+    .readall() or .readinto() to get content. GCS download_as_bytes() returns
+    bytes directly. For text content, use blob.download_as_text().
+    For downloading to a file, use blob.download_to_filename().
+    Azure download_blob(offset=, length=) for range reads maps to
+    blob.download_as_bytes(start=, end=).
+base_confidence: 0.88
+tags:
+  - azure-blob
+  - cloud-storage
+  - python
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      blob_client = blob_service.get_blob_client(
+          container="my-container",
+          blob="data/file.json"
+      )
+      stream = blob_client.download_blob()
+      content = stream.readall()
+      data = json.loads(content)
+    output: |
+      bucket = storage_client.bucket("my-container")
+      blob = bucket.blob("data/file.json")
+      content = blob.download_as_bytes()
+      data = json.loads(content)
+  - input: |
+      container_client = blob_service.get_container_client("reports")
+      blob_client = container_client.get_blob_client("monthly/report.csv")
+      with open("/tmp/report.csv", "wb") as f:
+          stream = blob_client.download_blob()
+          stream.readinto(f)
+    output: |
+      bucket = storage_client.bucket("reports")
+      blob = bucket.blob("monthly/report.csv")
+      blob.download_to_filename("/tmp/report.csv")

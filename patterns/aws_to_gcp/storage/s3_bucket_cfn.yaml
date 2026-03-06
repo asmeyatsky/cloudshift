@@ -1,0 +1,94 @@
+id: s3-bucket-cfn-to-gcs-bucket-tf
+name: "S3 Bucket CloudFormation to GCS Bucket (Terraform)"
+description: >
+  Transforms an AWS::S3::Bucket CloudFormation resource definition to a
+  google_storage_bucket Terraform resource. This covers the common migration
+  path from CloudFormation IaC to Terraform when moving to GCP.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: cloudformation
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "AWS::S3::Bucket"
+  text_patterns:
+    - "Type: AWS::S3::Bucket"
+    - "BucketName:"
+    - "VersioningConfiguration:"
+    - "LifecycleConfiguration:"
+transform:
+  replacement_template: |
+    resource "google_storage_bucket" "{{resource_name}}" {
+      name     = "{{bucket_name}}"
+      location = "{{location}}"
+      project  = var.project_id
+
+      storage_class               = "{{storage_class}}"
+      uniform_bucket_level_access = true
+
+      versioning {
+        enabled = {{versioning_enabled}}
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    This pattern converts CloudFormation YAML to Terraform HCL, which is a
+    language change in addition to a provider change. CloudFormation intrinsic
+    functions (!Ref, !Sub, Fn::GetAtt) must be manually converted to Terraform
+    expressions (var.*, resource references). CloudFormation Conditions have
+    no direct equivalent; use Terraform count or for_each.
+    DeletionPolicy: Retain maps to lifecycle { prevent_destroy = true }.
+base_confidence: 0.70
+tags:
+  - s3
+  - cloud-storage
+  - cloudformation
+  - terraform
+  - storage
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      Resources:
+        DataBucket:
+          Type: AWS::S3::Bucket
+          DeletionPolicy: Retain
+          Properties:
+            BucketName: !Sub "${AWS::StackName}-data"
+            VersioningConfiguration:
+              Status: Enabled
+            BucketEncryption:
+              ServerSideEncryptionConfiguration:
+                - ServerSideEncryptionByDefault:
+                    SSEAlgorithm: AES256
+            Tags:
+              - Key: Environment
+                Value: !Ref Environment
+    output: |
+      resource "google_storage_bucket" "data_bucket" {
+        name     = "${var.project_name}-data"
+        location = "US"
+        project  = var.project_id
+
+        storage_class               = "STANDARD"
+        uniform_bucket_level_access = true
+
+        versioning {
+          enabled = true
+        }
+
+        labels = {
+          environment = var.environment
+        }
+
+        lifecycle {
+          prevent_destroy = true
+        }
+      }

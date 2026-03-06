@@ -1,0 +1,60 @@
+id: s3-get-object-to-gcs-download-ts
+name: "S3 GetObjectCommand to GCS file.download (TypeScript)"
+description: >
+  Transforms S3 GetObjectCommand to GCS file.download. Maps Bucket/Key
+  to bucket.file(name).download() pattern.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "@aws-sdk/client-s3"
+    - "GetObjectCommand"
+  method_names:
+    - "GetObjectCommand"
+    - "send"
+  text_patterns:
+    - "new GetObjectCommand"
+    - "Bucket:"
+    - "Key:"
+transform:
+  replacement_template: |
+    const bucket = storage.bucket("{{bucket_name}}");
+    const file = bucket.file("{{key}}");
+    const [contents] = await file.download();
+  import_additions: []
+  import_removals:
+    - "import { GetObjectCommand } from '@aws-sdk/client-s3';"
+  notes: >
+    S3 GetObjectCommand returns a response with Body as a ReadableStream
+    that must be consumed. GCS file.download() returns a [Buffer] tuple directly.
+    For large files, use file.createReadStream() instead of download().
+    The S3 response also includes metadata (ContentType, ContentLength, etc.);
+    in GCS use file.getMetadata() separately.
+base_confidence: 0.90
+tags:
+  - s3
+  - cloud-storage
+  - typescript
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      import { GetObjectCommand } from '@aws-sdk/client-s3';
+
+      const command = new GetObjectCommand({
+        Bucket: 'my-bucket',
+        Key: 'data/file.json',
+      });
+      const response = await s3Client.send(command);
+      const body = await response.Body?.transformToString();
+      const data = JSON.parse(body || '{}');
+    output: |
+      const bucket = storage.bucket("my-bucket");
+      const file = bucket.file("data/file.json");
+      const [contents] = await file.download();
+      const data = JSON.parse(contents.toString());

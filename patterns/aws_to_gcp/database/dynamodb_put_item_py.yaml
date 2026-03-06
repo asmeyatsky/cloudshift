@@ -1,0 +1,77 @@
+id: dynamodb-put-item-to-firestore-set-py
+name: "DynamoDB put_item to Firestore document.set (Python)"
+description: >
+  Transforms DynamoDB put_item calls to Firestore document.set.
+  Maps the Item parameter with typed attribute values to a plain Python dict
+  for Firestore. DynamoDB requires type descriptors (S, N, M, etc.) while
+  Firestore accepts native Python types.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "put_item"
+  text_patterns:
+    - "Item="
+    - "TableName="
+    - "'S':"
+    - "'N':"
+transform:
+  replacement_template: |
+    doc_ref = db.collection("{{collection}}").document("{{document_id}}")
+    doc_ref.set({{document_data}})
+  import_additions: []
+  import_removals: []
+  notes: >
+    DynamoDB put_item replaces the entire item if it exists (upsert behavior).
+    Firestore document.set() has the same behavior by default.
+    Use doc_ref.set(data, merge=True) for partial updates (similar to
+    DynamoDB update_item). DynamoDB type annotations ({"S": "value"}) must
+    be stripped; Firestore uses native Python types.
+    ConditionExpression in put_item has no direct equivalent; use Firestore
+    transactions for conditional writes.
+base_confidence: 0.82
+tags:
+  - dynamodb
+  - firestore
+  - python
+  - database
+  - method-call
+  - medium-complexity
+examples:
+  - input: |
+      table.put_item(
+          Item={
+              'user_id': 'u123',
+              'name': 'Alice',
+              'email': 'alice@example.com',
+              'age': 30,
+              'active': True
+          }
+      )
+    output: |
+      doc_ref = db.collection("users").document("u123")
+      doc_ref.set({
+          "name": "Alice",
+          "email": "alice@example.com",
+          "age": 30,
+          "active": True
+      })
+  - input: |
+      dynamodb_client.put_item(
+          TableName='users',
+          Item={
+              'user_id': {'S': 'u123'},
+              'name': {'S': 'Alice'},
+              'age': {'N': '30'}
+          }
+      )
+    output: |
+      doc_ref = db.collection("users").document("u123")
+      doc_ref.set({
+          "name": "Alice",
+          "age": 30
+      })

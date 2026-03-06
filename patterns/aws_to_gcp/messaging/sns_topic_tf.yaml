@@ -1,0 +1,111 @@
+id: sns-topic-to-pubsub-topic-tf
+name: "SNS Topic to Pub/Sub Topic (Terraform)"
+description: >
+  Transforms aws_sns_topic and aws_sns_topic_subscription to google_pubsub_topic
+  and google_pubsub_subscription. SNS and Pub/Sub are both pub-sub systems,
+  making this a natural mapping.
+source_provider: aws
+target_provider: gcp
+source_service: sns
+target_service: pubsub
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_sns_topic"
+    - "aws_sns_topic_subscription"
+    - "aws_sns_topic_policy"
+  text_patterns:
+    - "protocol"
+    - "endpoint"
+    - "filter_policy"
+transform:
+  replacement_template: |
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_storage_policy {
+        allowed_persistence_regions = ["{{region}}"]
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    resource "google_pubsub_subscription" "{{subscription_name}}" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{resource_name}}.id
+      project = var.project_id
+
+      push_config {
+        push_endpoint = "{{endpoint_url}}"
+      }
+
+      filter = "{{filter_expression}}"
+
+      ack_deadline_seconds = 20
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    SNS topic + subscriptions map to Pub/Sub topic + subscriptions.
+    SNS subscription protocols:
+      - https/http -> push_config with push_endpoint
+      - sqs -> pull subscription (or push to Cloud Run/Cloud Functions)
+      - lambda -> push subscription to Cloud Functions
+      - email -> No direct equivalent (use SendGrid or Mailgun integration)
+      - sms -> No direct equivalent (use Twilio integration)
+    SNS FilterPolicy maps to Pub/Sub subscription filter (limited to attributes).
+    SNS FIFO topics map to Pub/Sub with enable_message_ordering=true.
+base_confidence: 0.82
+tags:
+  - sns
+  - pubsub
+  - terraform
+  - messaging
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_sns_topic" "notifications" {
+        name = "user-notifications"
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "aws_sns_topic_subscription" "webhook" {
+        topic_arn = aws_sns_topic.notifications.arn
+        protocol  = "https"
+        endpoint  = "https://api.example.com/webhook"
+
+        filter_policy = jsonencode({
+          event_type = ["user_created", "user_updated"]
+        })
+      }
+    output: |
+      resource "google_pubsub_topic" "notifications" {
+        name    = "user-notifications"
+        project = var.project_id
+
+        labels = {
+          environment = "production"
+        }
+      }
+
+      resource "google_pubsub_subscription" "webhook" {
+        name    = "user-notifications-webhook"
+        topic   = google_pubsub_topic.notifications.id
+        project = var.project_id
+
+        push_config {
+          push_endpoint = "https://api.example.com/webhook"
+        }
+
+        filter = "attributes.event_type = \"user_created\" OR attributes.event_type = \"user_updated\""
+
+        ack_deadline_seconds = 20
+      }

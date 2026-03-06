@@ -1,0 +1,153 @@
+id: step-functions-to-workflows-tf
+name: "Step Functions to Cloud Workflows (Terraform)"
+description: >
+  Transforms aws_sfn_state_machine to google_workflows_workflow.
+  Maps Amazon States Language (ASL) JSON definitions to Google Cloud
+  Workflows YAML definitions. Both are serverless orchestration services.
+source_provider: aws
+target_provider: gcp
+source_service: step-functions
+target_service: workflows
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_sfn_state_machine"
+    - "aws_sfn_activity"
+  text_patterns:
+    - "definition"
+    - "States"
+    - "StartAt"
+    - "state_machine"
+transform:
+  replacement_template: |
+    resource "google_workflows_workflow" "{{resource_name}}" {
+      name            = "{{workflow_name}}"
+      region          = "{{region}}"
+      project         = var.project_id
+      description     = "{{description}}"
+      service_account = "{{service_account_email}}"
+
+      source_contents = <<-YAML
+        main:
+          steps:
+            {{steps}}
+      YAML
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Step Functions uses Amazon States Language (JSON); Workflows uses YAML syntax.
+    State type mapping:
+      - Task -> call step (http.post, googleapis.*, etc.)
+      - Choice -> switch step with conditions
+      - Wait -> sys.sleep() call
+      - Parallel -> parallel step with branches
+      - Map -> for loop with iteration
+      - Pass -> assign step
+      - Succeed/Fail -> return/raise steps
+    Step Functions Lambda Task maps to Workflows Cloud Functions/Cloud Run connector.
+    Step Functions service integrations (DynamoDB, SQS, etc.) map to Workflows
+    googleapis.* connectors. Error handling (Catch/Retry) maps to try/except blocks.
+    Step Functions Express workflows (synchronous) map to Workflows execution with wait.
+base_confidence: 0.58
+tags:
+  - step-functions
+  - workflows
+  - terraform
+  - orchestration
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_sfn_state_machine" "order_processing" {
+        name     = "order-processing"
+        role_arn = aws_iam_role.sfn.arn
+
+        definition = jsonencode({
+          Comment = "Order processing workflow"
+          StartAt = "ValidateOrder"
+          States = {
+            ValidateOrder = {
+              Type     = "Task"
+              Resource = aws_lambda_function.validate.arn
+              Next     = "CheckInventory"
+              Catch = [{
+                ErrorEquals = ["ValidationError"]
+                Next        = "OrderFailed"
+              }]
+            }
+            CheckInventory = {
+              Type     = "Task"
+              Resource = aws_lambda_function.check_inventory.arn
+              Next     = "ProcessPayment"
+            }
+            ProcessPayment = {
+              Type     = "Task"
+              Resource = aws_lambda_function.payment.arn
+              Next     = "OrderComplete"
+            }
+            OrderComplete = {
+              Type = "Succeed"
+            }
+            OrderFailed = {
+              Type  = "Fail"
+              Cause = "Order validation failed"
+            }
+          }
+        })
+      }
+    output: |
+      resource "google_workflows_workflow" "order_processing" {
+        name            = "order-processing"
+        region          = "us-central1"
+        project         = var.project_id
+        description     = "Order processing workflow"
+        service_account = google_service_account.workflows.email
+
+        source_contents = <<-YAML
+          main:
+            steps:
+              - validate_order:
+                  try:
+                    call: http.post
+                    args:
+                      url: ${google_cloudfunctions2_function.validate.url}
+                      auth:
+                        type: OIDC
+                      body:
+                        order: $${args.order}
+                    result: validation_result
+                  except:
+                    as: e
+                    steps:
+                      - order_failed:
+                          raise:
+                            message: "Order validation failed"
+                            code: $${e.code}
+              - check_inventory:
+                  call: http.post
+                  args:
+                    url: ${google_cloudfunctions2_function.check_inventory.url}
+                    auth:
+                      type: OIDC
+                    body:
+                      order: $${validation_result}
+                  result: inventory_result
+              - process_payment:
+                  call: http.post
+                  args:
+                    url: ${google_cloudfunctions2_function.payment.url}
+                    auth:
+                      type: OIDC
+                    body:
+                      order: $${inventory_result}
+                  result: payment_result
+              - order_complete:
+                  return: $${payment_result}
+        YAML
+      }

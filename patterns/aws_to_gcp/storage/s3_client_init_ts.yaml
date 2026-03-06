@@ -1,0 +1,55 @@
+id: s3-client-init-to-gcs-client-ts
+name: "S3 Client Init to GCS Client (TypeScript)"
+description: >
+  Transforms @aws-sdk/client-s3 S3Client initialization to
+  @google-cloud/storage Storage client initialization.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: typescript
+construct_type: client_init
+match_pattern:
+  imports:
+    - "@aws-sdk/client-s3"
+    - "from '@aws-sdk/client-s3'"
+    - "from \"@aws-sdk/client-s3\""
+  client_names:
+    - "new S3Client"
+    - "new S3({"
+  text_patterns:
+    - "S3Client"
+    - "import { S3"
+transform:
+  replacement_template: |
+    import { Storage } from '@google-cloud/storage';
+
+    const storage = new Storage();
+  import_additions:
+    - "import { Storage } from '@google-cloud/storage';"
+  import_removals:
+    - "import { S3Client } from '@aws-sdk/client-s3';"
+    - "import { S3 } from '@aws-sdk/client-s3';"
+  notes: >
+    The @google-cloud/storage client uses Application Default Credentials.
+    If the original code passes explicit region or credentials config to S3Client,
+    configure the GCP equivalent via GOOGLE_APPLICATION_CREDENTIALS or pass
+    projectId/keyFilename to the Storage constructor.
+    Install: npm install @google-cloud/storage
+base_confidence: 0.92
+tags:
+  - s3
+  - cloud-storage
+  - typescript
+  - storage
+  - client-init
+  - low-complexity
+examples:
+  - input: |
+      import { S3Client } from '@aws-sdk/client-s3';
+
+      const s3Client = new S3Client({ region: 'us-east-1' });
+    output: |
+      import { Storage } from '@google-cloud/storage';
+
+      const storage = new Storage();

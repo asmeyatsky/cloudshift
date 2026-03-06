@@ -1,0 +1,143 @@
+id: azure-storage-account-to-gcs-bucket-tf
+name: "Azure Storage Account to GCS Bucket (Terraform)"
+description: >
+  Transforms azurerm_storage_account and azurerm_storage_container to
+  google_storage_bucket. Azure storage accounts are container-level resources
+  that hold multiple containers; each Azure container maps to a GCS bucket.
+source_provider: azure
+target_provider: gcp
+source_service: blob-storage
+target_service: cloud-storage
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_storage_account"
+    - "azurerm_storage_container"
+    - "azurerm_storage_blob"
+  text_patterns:
+    - "account_tier"
+    - "account_replication_type"
+    - "container_access_type"
+transform:
+  replacement_template: |
+    resource "google_storage_bucket" "{{resource_name}}" {
+      name     = "{{bucket_name}}"
+      location = "{{location}}"
+      project  = var.project_id
+
+      storage_class               = "{{storage_class}}"
+      uniform_bucket_level_access = true
+
+      versioning {
+        enabled = {{versioning_enabled}}
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure storage account is a grouping concept; GCP has no equivalent (buckets
+    are top-level resources). Each Azure container should map to a GCS bucket.
+    Azure account_tier/replication_type mapping:
+      - Standard/LRS -> STANDARD (single region)
+      - Standard/GRS -> STANDARD (dual-region)
+      - Standard/RAGRS -> STANDARD (dual-region)
+      - Premium/LRS -> STANDARD with pd-ssd (no equivalent tier)
+    Azure access tier mapping:
+      - Hot -> STANDARD
+      - Cool -> NEARLINE
+      - Archive -> ARCHIVE
+    Azure container_access_type:
+      - private -> uniform_bucket_level_access = true (default)
+      - blob -> allUsers: objectViewer IAM binding
+      - container -> allUsers: objectViewer IAM binding
+    Azure lifecycle management rules map to GCS lifecycle_rule blocks.
+base_confidence: 0.80
+tags:
+  - azure-storage
+  - cloud-storage
+  - terraform
+  - storage
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_storage_account" "main" {
+        name                     = "myappstorageaccount"
+        resource_group_name      = azurerm_resource_group.main.name
+        location                 = azurerm_resource_group.main.location
+        account_tier             = "Standard"
+        account_replication_type = "GRS"
+        min_tls_version          = "TLS1_2"
+
+        blob_properties {
+          versioning_enabled = true
+
+          delete_retention_policy {
+            days = 30
+          }
+        }
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "azurerm_storage_container" "data" {
+        name                  = "app-data"
+        storage_account_name  = azurerm_storage_account.main.name
+        container_access_type = "private"
+      }
+
+      resource "azurerm_storage_container" "uploads" {
+        name                  = "user-uploads"
+        storage_account_name  = azurerm_storage_account.main.name
+        container_access_type = "private"
+      }
+    output: |
+      resource "google_storage_bucket" "data" {
+        name     = "myapp-app-data"
+        location = "US"
+        project  = var.project_id
+
+        storage_class               = "STANDARD"
+        uniform_bucket_level_access = true
+
+        versioning {
+          enabled = true
+        }
+
+        lifecycle_rule {
+          condition {
+            days_since_noncurrent_time = 30
+          }
+          action {
+            type = "Delete"
+          }
+        }
+
+        labels = {
+          environment = "production"
+        }
+      }
+
+      resource "google_storage_bucket" "uploads" {
+        name     = "myapp-user-uploads"
+        location = "US"
+        project  = var.project_id
+
+        storage_class               = "STANDARD"
+        uniform_bucket_level_access = true
+
+        versioning {
+          enabled = true
+        }
+
+        labels = {
+          environment = "production"
+        }
+      }

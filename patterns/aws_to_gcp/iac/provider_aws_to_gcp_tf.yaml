@@ -1,0 +1,99 @@
+id: provider-aws-to-gcp-tf
+name: "AWS Provider to Google Provider (Terraform)"
+description: >
+  Transforms the AWS Terraform provider block to the Google Terraform provider
+  block. Maps region configuration, credential settings, and common provider
+  features like default tags to GCP equivalents.
+source_provider: aws
+target_provider: gcp
+source_service: terraform
+target_service: terraform
+language: hcl
+construct_type: provider_block
+match_pattern:
+  text_patterns:
+    - 'provider "aws"'
+    - "hashicorp/aws"
+    - "aws = {"
+  resource_types: []
+transform:
+  replacement_template: |
+    terraform {
+      required_providers {
+        google = {
+          source  = "hashicorp/google"
+          version = "~> 5.0"
+        }
+      }
+    }
+
+    provider "google" {
+      project = var.project_id
+      region  = "{{region}}"
+    }
+
+    variable "project_id" {
+      description = "The GCP project ID"
+      type        = string
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    AWS region to GCP region mapping:
+      - us-east-1 -> us-east1
+      - us-west-2 -> us-west1
+      - eu-west-1 -> europe-west1
+      - ap-southeast-1 -> asia-southeast1
+    AWS provider default_tags map to provider-level labels (only in google-beta).
+    AWS provider assume_role maps to impersonate_service_account.
+    AWS provider shared_credentials_file has no direct equivalent;
+    use GOOGLE_APPLICATION_CREDENTIALS or gcloud auth application-default login.
+    GCP requires a project_id which has no direct AWS equivalent (closest: account ID).
+    Consider also adding the google-beta provider for features in beta.
+base_confidence: 0.92
+tags:
+  - terraform
+  - provider
+  - infrastructure
+  - provider-block
+  - low-complexity
+examples:
+  - input: |
+      terraform {
+        required_providers {
+          aws = {
+            source  = "hashicorp/aws"
+            version = "~> 5.0"
+          }
+        }
+      }
+
+      provider "aws" {
+        region = "us-east-1"
+
+        default_tags {
+          tags = {
+            ManagedBy   = "terraform"
+            Environment = var.environment
+          }
+        }
+      }
+    output: |
+      terraform {
+        required_providers {
+          google = {
+            source  = "hashicorp/google"
+            version = "~> 5.0"
+          }
+        }
+      }
+
+      provider "google" {
+        project = var.project_id
+        region  = "us-east1"
+      }
+
+      variable "project_id" {
+        description = "The GCP project ID"
+        type        = string
+      }

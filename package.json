@@ -1,0 +1,8 @@
+{
+  "name": "cloudshift-workspace",
+  "private": true,
+  "workspaces": [
+    "ui",
+    "vscode-extension"
+  ]
+}

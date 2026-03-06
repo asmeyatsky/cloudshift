@@ -1,0 +1,207 @@
+# CloudShift Pattern YAML Schema
+# Version: 1.0.0
+# This file documents the structure and semantics of CloudShift migration pattern files.
+#
+# Each pattern file contains one or more YAML documents (separated by ---).
+# Each document describes a single migration transformation from a source cloud
+# provider construct to a Google Cloud Platform equivalent.
+
+schema_version: "1.0.0"
+
+fields:
+  id:
+    type: string
+    required: true
+    description: >
+      A unique identifier for the pattern, using kebab-case.
+      Convention: <source_service>-<operation>-to-<target_service>-<operation>-<lang>
+    example: "s3-put-object-to-gcs-upload-py"
+
+  name:
+    type: string
+    required: true
+    description: >
+      Human-readable name describing the migration transformation.
+    example: "S3 PutObject to GCS Upload (Python)"
+
+  description:
+    type: string
+    required: true
+    description: >
+      A detailed explanation of what this pattern migrates, including any
+      behavioral differences or caveats between source and target.
+
+  source_provider:
+    type: string
+    required: true
+    enum: [aws, azure]
+    description: The originating cloud provider.
+
+  target_provider:
+    type: string
+    required: true
+    enum: [gcp]
+    description: The destination cloud provider. Always 'gcp' in this catalogue.
+
+  source_service:
+    type: string
+    required: true
+    description: >
+      The source cloud service name (e.g., 's3', 'dynamodb', 'lambda',
+      'azure-functions', 'cosmosdb').
+
+  target_service:
+    type: string
+    required: true
+    description: >
+      The target GCP service name (e.g., 'cloud-storage', 'firestore',
+      'cloud-functions', 'pubsub').
+
+  language:
+    type: string
+    required: true
+    enum: [python, typescript, hcl, cloudformation, yaml]
+    description: >
+      The programming or configuration language of the code being transformed.
+      'hcl' is used for Terraform configurations.
+      'cloudformation' is used for AWS CloudFormation templates.
+
+  construct_type:
+    type: string
+    required: true
+    enum:
+      - import
+      - client_init
+      - method_call
+      - resource_block
+      - provider_block
+      - function_handler
+      - env_config
+    description: >
+      The type of code construct being matched and transformed.
+        import          - Import/require statements
+        client_init     - SDK client instantiation
+        method_call     - API method invocations
+        resource_block  - IaC resource definitions (Terraform/CFN)
+        provider_block  - IaC provider configuration
+        function_handler - Serverless function entry points
+        env_config      - Environment variable or credential configuration
+
+  match_pattern:
+    type: object
+    required: true
+    description: >
+      Defines how to detect the source code construct. At least one sub-field
+      must be provided. Multiple sub-fields are ANDed together.
+    fields:
+      imports:
+        type: list[string]
+        description: >
+          Import or require strings that indicate this pattern applies.
+          Supports glob-style wildcards.
+        example: ["import boto3", "from boto3"]
+      client_names:
+        type: list[string]
+        description: >
+          Constructor or factory method names that create the source client.
+        example: ["boto3.client('s3')", "boto3.resource('s3')"]
+      method_names:
+        type: list[string]
+        description: >
+          Method call names to match on source client objects.
+        example: ["put_object", "upload_fileobj"]
+      resource_types:
+        type: list[string]
+        description: >
+          Terraform resource type names or CloudFormation resource types.
+        example: ["aws_s3_bucket", "AWS::S3::Bucket"]
+      text_patterns:
+        type: list[string]
+        description: >
+          Additional regex or literal text patterns for matching.
+          Used as a supplement to the structured matchers.
+        example: ["s3://", "arn:aws:s3:::"]
+
+  transform:
+    type: object
+    required: true
+    description: >
+      Defines the replacement output and supporting changes.
+    fields:
+      replacement_template:
+        type: string
+        required: true
+        description: >
+          The GCP-equivalent code template. May contain placeholders
+          using {{variable}} syntax for dynamic parts extracted from
+          the matched source code.
+      import_additions:
+        type: list[string]
+        description: >
+          New import statements that must be added to the file when
+          this transformation is applied.
+      import_removals:
+        type: list[string]
+        description: >
+          Old import statements that should be removed from the file
+          when this transformation is applied.
+      notes:
+        type: string
+        description: >
+          Free-form migration notes, caveats, or manual steps required
+          after the automated transformation.
+
+  base_confidence:
+    type: float
+    required: true
+    range: [0.0, 1.0]
+    description: >
+      The baseline confidence score for this pattern. Higher values mean
+      the transformation is more reliably automated. Typical ranges:
+        0.90-1.0  - Direct 1:1 mapping, very safe
+        0.80-0.89 - Good mapping with minor semantic differences
+        0.70-0.79 - Reasonable mapping, review recommended
+        0.60-0.69 - Partial mapping, manual adjustments likely needed
+        < 0.60    - Structural differences, significant manual work
+
+  tags:
+    type: list[string]
+    required: true
+    description: >
+      Category tags for filtering and grouping patterns.
+      Recommended tags include the source service, target service,
+      language, migration category, and complexity level.
+    example: ["s3", "cloud-storage", "python", "storage", "low-complexity"]
+
+  examples:
+    type: list[object]
+    required: true
+    description: >
+      One or more concrete input/output pairs demonstrating the pattern.
+    fields:
+      input:
+        type: string
+        required: true
+        description: Source code before transformation.
+      output:
+        type: string
+        required: true
+        description: Expected code after transformation.
+
+# File organization:
+#   patterns/
+#     schema.yaml                  <- This file
+#     aws_to_gcp/
+#       compute/                   <- Lambda, EC2, ECS, EKS patterns
+#       storage/                   <- S3 patterns
+#       database/                  <- DynamoDB, RDS, ElastiCache patterns
+#       messaging/                 <- SQS, SNS, EventBridge patterns
+#       iam/                       <- IAM role/policy patterns
+#       secrets/                   <- Secrets Manager, KMS patterns
+#       iac/                       <- Provider, CDN, DNS, API GW patterns
+#     azure_to_gcp/
+#       compute/                   <- Azure Functions, VMs, AKS patterns
+#       storage/                   <- Blob Storage patterns
+#       database/                  <- CosmosDB, Azure SQL patterns
+#       messaging/                 <- Service Bus, Event Hub patterns
+#       iam/                       <- Azure Identity, Key Vault patterns

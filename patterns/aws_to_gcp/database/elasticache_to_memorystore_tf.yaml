@@ -1,0 +1,115 @@
+id: elasticache-redis-to-memorystore-tf
+name: "ElastiCache Redis to Memorystore (Terraform)"
+description: >
+  Transforms aws_elasticache_cluster or aws_elasticache_replication_group
+  (Redis) to google_redis_instance (Memorystore for Redis). Maps node types
+  to memory sizes, replication settings, and subnet configurations.
+source_provider: aws
+target_provider: gcp
+source_service: elasticache
+target_service: memorystore
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_elasticache_cluster"
+    - "aws_elasticache_replication_group"
+    - "aws_elasticache_subnet_group"
+  text_patterns:
+    - "engine"
+    - "redis"
+    - "node_type"
+    - "num_cache_clusters"
+transform:
+  replacement_template: |
+    resource "google_redis_instance" "{{resource_name}}" {
+      name           = "{{instance_name}}"
+      tier           = "{{tier}}"
+      memory_size_gb = {{memory_size_gb}}
+      region         = "{{region}}"
+      project        = var.project_id
+
+      redis_version = "REDIS_{{version}}"
+
+      authorized_network = "{{network}}"
+
+      redis_configs = {
+        maxmemory-policy = "{{maxmemory_policy}}"
+      }
+
+      display_name = "{{display_name}}"
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    ElastiCache node type mapping (approximate memory):
+    cache.t3.micro (0.5GB) -> memory_size_gb=1, cache.t3.small (1.37GB) -> memory_size_gb=2,
+    cache.m5.large (6.38GB) -> memory_size_gb=7, cache.r5.large (13.07GB) -> memory_size_gb=13.
+    ElastiCache replication_group with automatic_failover maps to tier=STANDARD_HA.
+    Single-node ElastiCache maps to tier=BASIC.
+    ElastiCache parameter groups map to redis_configs.
+    ElastiCache subnet groups map to authorized_network.
+    ElastiCache Cluster Mode (sharding) maps to Memorystore for Redis Cluster
+    (a separate resource type: google_redis_cluster).
+base_confidence: 0.80
+tags:
+  - elasticache
+  - memorystore
+  - redis
+  - terraform
+  - database
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_elasticache_replication_group" "main" {
+        replication_group_id = "production-redis"
+        description          = "Production Redis cluster"
+        engine               = "redis"
+        engine_version       = "7.0"
+        node_type            = "cache.r5.large"
+        num_cache_clusters   = 2
+
+        automatic_failover_enabled = true
+        multi_az_enabled           = true
+
+        subnet_group_name  = aws_elasticache_subnet_group.main.name
+        security_group_ids = [aws_security_group.redis.id]
+
+        at_rest_encryption_enabled = true
+        transit_encryption_enabled = true
+
+        parameter_group_name = "default.redis7"
+
+        tags = {
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_redis_instance" "main" {
+        name           = "production-redis"
+        tier           = "STANDARD_HA"
+        memory_size_gb = 13
+        region         = "us-central1"
+        project        = var.project_id
+
+        redis_version = "REDIS_7_0"
+
+        authorized_network = google_compute_network.main.id
+
+        transit_encryption_mode = "SERVER_AUTHENTICATION"
+
+        redis_configs = {
+          maxmemory-policy = "volatile-lru"
+        }
+
+        display_name = "Production Redis cluster"
+
+        labels = {
+          environment = "production"
+        }
+      }

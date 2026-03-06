@@ -1,0 +1,144 @@
+id: azure-vm-to-compute-engine-tf
+name: "Azure Virtual Machine to Compute Engine (Terraform)"
+description: >
+  Transforms azurerm_linux_virtual_machine or azurerm_windows_virtual_machine
+  to google_compute_instance. Maps VM sizes to machine types, managed disks
+  to persistent disks, NSGs to firewall rules, and NICs to network interfaces.
+source_provider: azure
+target_provider: gcp
+source_service: virtual-machines
+target_service: compute-engine
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_linux_virtual_machine"
+    - "azurerm_windows_virtual_machine"
+    - "azurerm_virtual_machine"
+    - "azurerm_network_interface"
+  text_patterns:
+    - "size"
+    - "os_disk"
+    - "source_image_reference"
+    - "admin_username"
+transform:
+  replacement_template: |
+    resource "google_compute_instance" "{{resource_name}}" {
+      name         = "{{instance_name}}"
+      machine_type = "{{machine_type}}"
+      zone         = "{{zone}}"
+
+      boot_disk {
+        initialize_params {
+          image = "{{image}}"
+          size  = {{disk_size_gb}}
+          type  = "{{disk_type}}"
+        }
+      }
+
+      network_interface {
+        network    = "{{network}}"
+        subnetwork = "{{subnetwork}}"
+
+        access_config {
+          // Ephemeral public IP
+        }
+      }
+
+      metadata = {
+        ssh-keys = "{{admin_username}}:${file("{{ssh_key_path}}")}"
+      }
+
+      labels = {
+        {{labels}}
+      }
+
+      tags = [{{network_tags}}]
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure VM size mapping (approximate):
+      - Standard_B1s -> e2-micro
+      - Standard_B2s -> e2-small
+      - Standard_D2s_v3 -> n2-standard-2
+      - Standard_D4s_v3 -> n2-standard-4
+      - Standard_E2s_v3 -> n2-highmem-2
+      - Standard_F2s_v2 -> c2-standard-4
+    Azure managed disks map to GCP persistent disks:
+      - Standard_LRS -> pd-standard
+      - Premium_LRS -> pd-ssd
+      - StandardSSD_LRS -> pd-balanced
+    Azure NICs are separate resources; GCP uses inline network_interface blocks.
+    Azure NSGs map to google_compute_firewall rules with target tags.
+    Azure availability sets/zones map to GCP zones and instance groups.
+    Azure custom_data maps to metadata_startup_script.
+base_confidence: 0.75
+tags:
+  - azure-vm
+  - compute-engine
+  - terraform
+  - compute
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_linux_virtual_machine" "web" {
+        name                = "web-server"
+        resource_group_name = azurerm_resource_group.main.name
+        location            = azurerm_resource_group.main.location
+        size                = "Standard_D2s_v3"
+        admin_username      = "adminuser"
+
+        network_interface_ids = [azurerm_network_interface.web.id]
+
+        admin_ssh_key {
+          username   = "adminuser"
+          public_key = file("~/.ssh/id_rsa.pub")
+        }
+
+        os_disk {
+          caching              = "ReadWrite"
+          storage_account_type = "Premium_LRS"
+          disk_size_gb         = 30
+        }
+
+        source_image_reference {
+          publisher = "Canonical"
+          offer     = "0001-com-ubuntu-server-jammy"
+          sku       = "22_04-lts"
+          version   = "latest"
+        }
+
+        tags = {
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_compute_instance" "web" {
+        name         = "web-server"
+        machine_type = "n2-standard-2"
+        zone         = "us-central1-a"
+
+        boot_disk {
+          initialize_params {
+            image = "ubuntu-os-cloud/ubuntu-2204-lts"
+            size  = 30
+            type  = "pd-ssd"
+          }
+        }
+
+        network_interface {
+          network    = google_compute_network.main.id
+          subnetwork = google_compute_subnetwork.main.id
+
+          access_config {}
+        }
+
+        metadata = {
+          ssh-keys = "adminuser:${file("~/.ssh/id_rsa.pub")}"
+        }
+
+        labels = {
+          environment = "production"
+        }
+      }
