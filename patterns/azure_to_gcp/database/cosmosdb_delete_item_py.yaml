@@ -1,0 +1,67 @@
+id: azure-cosmosdb-delete-item-to-firestore-py
+name: "CosmosDB delete_item to Firestore document.delete (Python)"
+description: >
+  Transforms Azure CosmosDB container.delete_item() calls to Firestore
+  collection.document().delete(). Maps CosmosDB item deletion with
+  partition keys to Firestore document deletion.
+source_provider: azure
+target_provider: gcp
+source_service: cosmosdb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  imports:
+    - "from azure.cosmos import CosmosClient"
+    - "from azure.cosmos import exceptions"
+  text_patterns:
+    - "delete_item"
+    - "container"
+    - "item="
+    - "partition_key"
+transform:
+  replacement_template: |
+    collection.document("{{document_id}}").delete()
+  import_additions:
+    - "from google.cloud import firestore"
+  import_removals:
+    - "from azure.cosmos import CosmosClient"
+    - "from azure.cosmos import exceptions"
+  notes: >
+    CosmosDB delete_item(item=id, partition_key=pk) maps to
+    Firestore document(id).delete().
+    CosmosDB raises CosmosResourceNotFoundError when item not found;
+    Firestore delete() succeeds silently even if document does not exist.
+    CosmosDB partition_key parameter is not needed in Firestore.
+    CosmosDB conditional delete with etag/match_condition maps to
+    Firestore precondition parameter (exists=True).
+    Both operations are immediate and permanent (no soft-delete by default).
+base_confidence: 0.88
+tags:
+  - cosmosdb
+  - firestore
+  - python
+  - database
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      from azure.cosmos import CosmosClient, exceptions
+
+      cosmos_client = CosmosClient(url=endpoint, credential=key)
+      database = cosmos_client.get_database_client("mydb")
+      container = database.get_container_client("users")
+
+      try:
+          container.delete_item(item="user-001", partition_key="engineering")
+          print("User deleted")
+      except exceptions.CosmosResourceNotFoundError:
+          print("User not found")
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      collection = db.collection("users")
+
+      collection.document("user-001").delete()
+      print("User deleted")

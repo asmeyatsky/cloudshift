@@ -1,0 +1,205 @@
+id: aws-ecs-service-to-gcp-cloud-run-tf
+name: "AWS ECS Service to GCP Cloud Run (Terraform)"
+description: >
+  Transforms aws_ecs_cluster, aws_ecs_service, and aws_ecs_task_definition
+  to google_cloud_run_v2_service. ECS Fargate workloads map naturally to
+  Cloud Run as both are serverless container platforms. ECS on EC2 may
+  require GKE instead.
+source_provider: aws
+target_provider: gcp
+source_service: ecs
+target_service: cloud-run
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_ecs_cluster"
+    - "aws_ecs_service"
+    - "aws_ecs_task_definition"
+    - "aws_ecs_cluster_capacity_providers"
+  text_patterns:
+    - "container_definitions"
+    - "task_definition"
+    - "launch_type"
+    - "FARGATE"
+    - "desired_count"
+    - "cpu"
+    - "memory"
+transform:
+  replacement_template: |
+    resource "google_cloud_run_v2_service" "{{resource_name}}" {
+      name     = "{{service_name}}"
+      location = var.region
+      project  = var.project_id
+
+      template {
+        scaling {
+          min_instance_count = {{min_count}}
+          max_instance_count = {{max_count}}
+        }
+
+        containers {
+          image = "{{container_image}}"
+          name  = "{{container_name}}"
+
+          ports {
+            container_port = {{container_port}}
+          }
+
+          resources {
+            limits = {
+              cpu    = "{{cpu}}"
+              memory = "{{memory}}"
+            }
+          }
+
+          env {
+            name  = "{{env_name}}"
+            value = "{{env_value}}"
+          }
+
+          env {
+            name = "{{secret_env_name}}"
+            value_source {
+              secret_key_ref {
+                secret  = "{{secret_name}}"
+                version = "latest"
+              }
+            }
+          }
+        }
+
+        service_account = google_service_account.{{sa_name}}.email
+
+        vpc_access {
+          connector = google_vpc_access_connector.{{connector_name}}.id
+          egress    = "PRIVATE_RANGES_ONLY"
+        }
+      }
+
+      traffic {
+        percent = 100
+        type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    ECS to Cloud Run mapping:
+      - aws_ecs_cluster has no direct equivalent (Cloud Run is fully managed).
+      - aws_ecs_task_definition container_definitions map to template.containers.
+      - ECS cpu/memory (in units/MiB) map to Cloud Run resource limits.
+        ECS 256 cpu = 0.25 vCPU = Cloud Run "1" (minimum). ECS 1024 = "1", 2048 = "2".
+        ECS memory 512 MiB = Cloud Run "512Mi".
+      - ECS desired_count maps to scaling min/max instance count.
+      - ECS task role maps to Cloud Run service account.
+      - ECS awslogs driver maps to Cloud Logging (automatic in Cloud Run).
+      - ECS service load balancer maps to Cloud Run built-in URL or custom domain.
+      - ECS on EC2 launch type is better mapped to GKE than Cloud Run.
+      - Multi-container ECS tasks require Cloud Run multi-container (sidecar) support.
+base_confidence: 0.75
+tags:
+  - ecs
+  - cloud-run
+  - terraform
+  - compute
+  - containers
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_ecs_cluster" "main" {
+        name = "production-cluster"
+      }
+
+      resource "aws_ecs_task_definition" "app" {
+        family                   = "app-task"
+        network_mode             = "awsvpc"
+        requires_compatibilities = ["FARGATE"]
+        cpu                      = "512"
+        memory                   = "1024"
+        execution_role_arn       = aws_iam_role.ecs_execution.arn
+        task_role_arn            = aws_iam_role.ecs_task.arn
+
+        container_definitions = jsonencode([
+          {
+            name      = "app"
+            image     = "123456789.dkr.ecr.us-east-1.amazonaws.com/app:latest"
+            cpu       = 512
+            memory    = 1024
+            essential = true
+            portMappings = [
+              {
+                containerPort = 8080
+                protocol      = "tcp"
+              }
+            ]
+            environment = [
+              {
+                name  = "NODE_ENV"
+                value = "production"
+              }
+            ]
+          }
+        ])
+      }
+
+      resource "aws_ecs_service" "app" {
+        name            = "app-service"
+        cluster         = aws_ecs_cluster.main.id
+        task_definition = aws_ecs_task_definition.app.arn
+        desired_count   = 3
+        launch_type     = "FARGATE"
+
+        network_configuration {
+          subnets         = aws_subnet.private[*].id
+          security_groups = [aws_security_group.ecs.id]
+        }
+
+        load_balancer {
+          target_group_arn = aws_lb_target_group.app.arn
+          container_name   = "app"
+          container_port   = 8080
+        }
+      }
+    output: |
+      resource "google_cloud_run_v2_service" "app" {
+        name     = "app-service"
+        location = var.region
+        project  = var.project_id
+
+        template {
+          scaling {
+            min_instance_count = 3
+            max_instance_count = 10
+          }
+
+          containers {
+            image = "us-docker.pkg.dev/my-project/app-repo/app:latest"
+            name  = "app"
+
+            ports {
+              container_port = 8080
+            }
+
+            resources {
+              limits = {
+                cpu    = "1"
+                memory = "1Gi"
+              }
+            }
+
+            env {
+              name  = "NODE_ENV"
+              value = "production"
+            }
+          }
+
+          service_account = google_service_account.app.email
+        }
+
+        traffic {
+          percent = 100
+          type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+        }
+      }

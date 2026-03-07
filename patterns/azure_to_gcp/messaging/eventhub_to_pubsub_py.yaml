@@ -1,0 +1,122 @@
+id: azure-eventhub-to-pubsub-py
+name: "Azure Event Hub to Pub/Sub Client Init (Python)"
+description: >
+  Transforms Azure Event Hub EventHubProducerClient and EventHubConsumerClient
+  to GCP Pub/Sub PublisherClient and SubscriberClient. Maps Event Hub
+  producer/consumer patterns to Pub/Sub publish/subscribe patterns.
+source_provider: azure
+target_provider: gcp
+source_service: event-hub
+target_service: pubsub
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "from azure.eventhub import EventHubProducerClient"
+    - "from azure.eventhub import EventHubConsumerClient"
+    - "from azure.eventhub import EventData"
+  text_patterns:
+    - "EventHubProducerClient"
+    - "EventHubConsumerClient"
+    - "EventData"
+    - "create_batch"
+    - "send_batch"
+    - "from_connection_string"
+    - "eventhub_name"
+transform:
+  replacement_template: |
+    from google.cloud import pubsub_v1
+
+    # Producer -> Publisher
+    publisher = pubsub_v1.PublisherClient()
+    topic_path = publisher.topic_path("{{project_id}}", "{{topic_name}}")
+
+    # Consumer -> Subscriber
+    subscriber = pubsub_v1.SubscriberClient()
+    subscription_path = subscriber.subscription_path("{{project_id}}", "{{subscription_name}}")
+  import_additions:
+    - "from google.cloud import pubsub_v1"
+  import_removals:
+    - "from azure.eventhub import EventHubProducerClient"
+    - "from azure.eventhub import EventHubConsumerClient"
+    - "from azure.eventhub import EventData"
+  notes: >
+    EventHubProducerClient maps to pubsub_v1.PublisherClient.
+    EventHubConsumerClient maps to pubsub_v1.SubscriberClient.
+    EventData(body) maps to publisher.publish(topic, data=body.encode()).
+    Event Hub create_batch/send_batch maps to Pub/Sub batch publishing
+    (automatic via PublisherClient batch settings).
+    Event Hub partitions (user-specified) map to Pub/Sub internal
+    partitioning (automatic, not configurable).
+    Event Hub partition_key maps to Pub/Sub ordering_key.
+    Event Hub consumer groups map to Pub/Sub subscriptions.
+    Event Hub checkpoint store maps to Pub/Sub ack management.
+    Event Hub offset/sequence_number tracking is handled automatically
+    by Pub/Sub subscription state.
+base_confidence: 0.75
+tags:
+  - event-hub
+  - pubsub
+  - python
+  - messaging
+  - client-init
+  - medium-complexity
+examples:
+  - input: |
+      from azure.eventhub import EventHubProducerClient, EventData
+
+      producer = EventHubProducerClient.from_connection_string(
+          conn_str=connection_string,
+          eventhub_name="app-events"
+      )
+
+      event_data_batch = producer.create_batch()
+      event_data_batch.add(EventData(json.dumps({"event": "click", "user": "u1"})))
+      event_data_batch.add(EventData(json.dumps({"event": "view", "user": "u2"})))
+      producer.send_batch(event_data_batch)
+      producer.close()
+    output: |
+      from google.cloud import pubsub_v1
+      import json
+
+      publisher = pubsub_v1.PublisherClient()
+      topic_path = publisher.topic_path("my-project", "app-events")
+
+      future1 = publisher.publish(
+          topic_path,
+          data=json.dumps({"event": "click", "user": "u1"}).encode("utf-8")
+      )
+      future2 = publisher.publish(
+          topic_path,
+          data=json.dumps({"event": "view", "user": "u2"}).encode("utf-8")
+      )
+      future1.result()
+      future2.result()
+  - input: |
+      from azure.eventhub import EventHubConsumerClient
+
+      consumer = EventHubConsumerClient.from_connection_string(
+          conn_str=connection_string,
+          consumer_group="$Default",
+          eventhub_name="app-events"
+      )
+
+      def on_event(partition_context, event):
+          body = event.body_as_json()
+          process_event(body)
+          partition_context.update_checkpoint(event)
+
+      consumer.receive(on_event=on_event, starting_position="-1")
+    output: |
+      from google.cloud import pubsub_v1
+
+      subscriber = pubsub_v1.SubscriberClient()
+      subscription_path = subscriber.subscription_path("my-project", "app-events-sub")
+
+      def callback(message):
+          body = json.loads(message.data.decode("utf-8"))
+          process_event(body)
+          message.ack()
+
+      streaming_pull_future = subscriber.subscribe(subscription_path, callback=callback)
+      streaming_pull_future.result()

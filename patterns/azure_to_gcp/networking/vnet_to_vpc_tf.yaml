@@ -1,0 +1,115 @@
+id: azure-vnet-to-gcp-vpc-tf
+name: "Azure Virtual Network to GCP VPC (Terraform)"
+description: >
+  Transforms azurerm_virtual_network and azurerm_subnet to
+  google_compute_network and google_compute_subnetwork. Maps Azure VNet
+  address spaces and subnets to GCP VPC networks and subnetworks.
+source_provider: azure
+target_provider: gcp
+source_service: virtual-network
+target_service: vpc
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_virtual_network"
+    - "azurerm_subnet"
+  text_patterns:
+    - "address_space"
+    - "address_prefixes"
+    - "virtual_network_name"
+    - "service_endpoints"
+    - "delegation"
+transform:
+  replacement_template: |
+    resource "google_compute_network" "{{resource_name}}" {
+      name                    = "{{network_name}}"
+      auto_create_subnetworks = false
+      project                 = var.project_id
+    }
+
+    resource "google_compute_subnetwork" "{{subnet_name}}" {
+      name          = "{{subnet_name}}"
+      ip_cidr_range = "{{cidr_range}}"
+      region        = "{{region}}"
+      network       = google_compute_network.{{resource_name}}.id
+      project       = var.project_id
+
+      secondary_ip_range {
+        range_name    = "{{secondary_range_name}}"
+        ip_cidr_range = "{{secondary_cidr}}"
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure VNet address_space is a top-level CIDR; GCP VPCs do not have
+    an address space (it is defined per subnetwork).
+    Azure VNets are regional; GCP VPCs are global with regional subnets.
+    Azure subnets reference a VNet; GCP subnetworks reference a network.
+    Azure service_endpoints map to GCP Private Google Access or
+    Private Service Connect.
+    Azure subnet delegations map to GCP serverless VPC connectors
+    or specific service configurations.
+    Azure VNet peering maps to GCP VPC Network Peering.
+    Azure address_prefixes on subnets map to GCP ip_cidr_range.
+    GCP requires auto_create_subnetworks=false for custom mode VPCs
+    (equivalent to Azure's explicit subnet definitions).
+base_confidence: 0.80
+tags:
+  - virtual-network
+  - vpc
+  - terraform
+  - networking
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_virtual_network" "main" {
+        name                = "myapp-vnet"
+        address_space       = ["10.0.0.0/16"]
+        location            = azurerm_resource_group.main.location
+        resource_group_name = azurerm_resource_group.main.name
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "azurerm_subnet" "app" {
+        name                 = "app-subnet"
+        resource_group_name  = azurerm_resource_group.main.name
+        virtual_network_name = azurerm_virtual_network.main.name
+        address_prefixes     = ["10.0.1.0/24"]
+        service_endpoints    = ["Microsoft.Sql", "Microsoft.Storage"]
+      }
+
+      resource "azurerm_subnet" "db" {
+        name                 = "db-subnet"
+        resource_group_name  = azurerm_resource_group.main.name
+        virtual_network_name = azurerm_virtual_network.main.name
+        address_prefixes     = ["10.0.2.0/24"]
+      }
+    output: |
+      resource "google_compute_network" "main" {
+        name                    = "myapp-vpc"
+        auto_create_subnetworks = false
+        project                 = var.project_id
+      }
+
+      resource "google_compute_subnetwork" "app" {
+        name                     = "app-subnet"
+        ip_cidr_range            = "10.0.1.0/24"
+        region                   = var.region
+        network                  = google_compute_network.main.id
+        project                  = var.project_id
+        private_ip_google_access = true
+      }
+
+      resource "google_compute_subnetwork" "db" {
+        name          = "db-subnet"
+        ip_cidr_range = "10.0.2.0/24"
+        region        = var.region
+        network       = google_compute_network.main.id
+        project       = var.project_id
+      }

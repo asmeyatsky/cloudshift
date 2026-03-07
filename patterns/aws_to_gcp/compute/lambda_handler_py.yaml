@@ -1,0 +1,83 @@
+id: lambda-handler-to-cloud-function-py
+name: "Lambda handler to Cloud Function entry point (Python)"
+description: >
+  Transforms AWS Lambda handler function definitions to Google Cloud
+  Function entry points. Lambda handlers receive event and context
+  parameters, while HTTP-triggered Cloud Functions receive a Flask
+  request object. Event-triggered Cloud Functions use CloudEvent or
+  background function signatures.
+source_provider: aws
+target_provider: gcp
+source_service: lambda
+target_service: cloud-functions
+language: python
+construct_type: function_def
+match_pattern:
+  method_names:
+    - "handler"
+    - "lambda_handler"
+  text_patterns:
+    - "def handler(event, context)"
+    - "def lambda_handler(event, context)"
+transform:
+  replacement_template: |
+    def handler(request):
+        """HTTP Cloud Function entry point."""
+        request_json = request.get_json(silent=True)
+  import_additions:
+    - "import functions_framework"
+  import_removals: []
+  notes: >
+    Lambda functions receive an event dict and a context object. For
+    HTTP-triggered Cloud Functions, the entry point receives a Flask
+    Request object. For event-triggered Cloud Functions (e.g., Pub/Sub,
+    GCS), use the @functions_framework.cloud_event decorator with a
+    CloudEvent parameter. The Lambda context object (function name,
+    remaining time, etc.) has no direct equivalent; use environment
+    variables or the functions framework instead. Return values differ:
+    Lambda returns a dict with statusCode and body, while Cloud Functions
+    return a Flask response tuple or string.
+base_confidence: 0.82
+tags:
+  - lambda
+  - cloud-functions
+  - serverless
+  - python
+examples:
+  - input: |
+      import json
+
+      def lambda_handler(event, context):
+          body = json.loads(event["body"])
+          name = body.get("name", "World")
+          return {
+              "statusCode": 200,
+              "body": json.dumps({"message": f"Hello, {name}!"}),
+          }
+    output: |
+      import json
+      import functions_framework
+
+      @functions_framework.http
+      def handler(request):
+          body = request.get_json(silent=True) or {}
+          name = body.get("name", "World")
+          return json.dumps({"message": f"Hello, {name}!"}), 200
+  - input: |
+      import json
+      import boto3
+
+      def handler(event, context):
+          for record in event["Records"]:
+              message = record["body"]
+              process_message(message)
+          return {"statusCode": 200, "body": "OK"}
+    output: |
+      import json
+      import functions_framework
+
+      @functions_framework.cloud_event
+      def handler(cloud_event):
+          import base64
+          message = base64.b64decode(cloud_event.data["message"]["data"]).decode("utf-8")
+          process_message(message)

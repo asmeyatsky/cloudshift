@@ -1,0 +1,125 @@
+id: ssm-parameter-store-to-secret-manager-py
+name: "SSM Parameter Store to Secret Manager (Python)"
+description: >
+  Transforms AWS SSM Parameter Store calls (get_parameter, put_parameter,
+  get_parameters_by_path) to Google Cloud Secret Manager operations. SSM
+  Parameter Store provides hierarchical key-value storage for configuration
+  data and secrets, while GCP Secret Manager focuses on secret storage with
+  versioning and access control.
+source_provider: aws
+target_provider: gcp
+source_service: ssm
+target_service: secret-manager
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "boto3.client"
+    - "get_parameter"
+    - "put_parameter"
+    - "get_parameters_by_path"
+  text_patterns:
+    - "boto3.client('ssm')"
+    - 'boto3.client("ssm")'
+    - "get_parameter"
+    - "put_parameter"
+    - "get_parameters_by_path"
+transform:
+  replacement_template: |
+    client = secretmanager.SecretManagerServiceClient()
+    name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+    response = client.access_secret_version(request={"name": name})
+    value = response.payload.data.decode("utf-8")
+  import_additions:
+    - "from google.cloud import secretmanager"
+  import_removals:
+    - "import boto3"
+  notes: >
+    SSM Parameter Store supports hierarchical paths (e.g., /app/prod/db_host)
+    and parameter types (String, StringList, SecureString). Secret Manager
+    does not natively support hierarchical organization; use naming
+    conventions (e.g., app-prod-db-host) or labels to simulate it.
+    SecureString parameters with KMS encryption map naturally to Secret
+    Manager which encrypts all secrets. get_parameters_by_path has no
+    direct equivalent; use list_secrets with a filter instead. For
+    non-sensitive configuration, consider using GCP Runtime Configurator
+    or environment variables.
+base_confidence: 0.75
+tags:
+  - ssm
+  - parameter-store
+  - secret-manager
+  - python
+examples:
+  - input: |
+      import boto3
+
+      ssm = boto3.client("ssm")
+      response = ssm.get_parameter(
+          Name="/myapp/production/database_url",
+          WithDecryption=True,
+      )
+      db_url = response["Parameter"]["Value"]
+    output: |
+      from google.cloud import secretmanager
+
+      client = secretmanager.SecretManagerServiceClient()
+      name = f"projects/{project_id}/secrets/myapp-production-database-url/versions/latest"
+      response = client.access_secret_version(request={"name": name})
+      db_url = response.payload.data.decode("utf-8")
+  - input: |
+      import boto3
+
+      ssm = boto3.client("ssm")
+      ssm.put_parameter(
+          Name="/myapp/production/api_key",
+          Value="my-api-key-value",
+          Type="SecureString",
+          Overwrite=True,
+      )
+    output: |
+      from google.cloud import secretmanager
+
+      client = secretmanager.SecretManagerServiceClient()
+      parent = f"projects/{project_id}/secrets/myapp-production-api-key"
+      # Create secret if it doesn't exist, then add a new version
+      try:
+          client.create_secret(
+              request={
+                  "parent": f"projects/{project_id}",
+                  "secret_id": "myapp-production-api-key",
+                  "secret": {"replication": {"automatic": {}}},
+              }
+          )
+      except Exception:
+          pass  # Secret already exists
+      client.add_secret_version(
+          request={
+              "parent": parent,
+              "payload": {"data": "my-api-key-value".encode("utf-8")},
+          }
+      )
+  - input: |
+      import boto3
+
+      ssm = boto3.client("ssm")
+      response = ssm.get_parameters_by_path(
+          Path="/myapp/production/",
+          WithDecryption=True,
+          Recursive=True,
+      )
+      params = {p["Name"]: p["Value"] for p in response["Parameters"]}
+    output: |
+      from google.cloud import secretmanager
+
+      client = secretmanager.SecretManagerServiceClient()
+      parent = f"projects/{project_id}"
+      # List secrets matching the path prefix using filter
+      secrets = client.list_secrets(
+          request={"parent": parent, "filter": 'labels.path="myapp-production"'}
+      )
+      params = {}
+      for secret in secrets:
+          version_name = f"{secret.name}/versions/latest"
+          response = client.access_secret_version(request={"name": version_name})
+          params[secret.secret_id] = response.payload.data.decode("utf-8")

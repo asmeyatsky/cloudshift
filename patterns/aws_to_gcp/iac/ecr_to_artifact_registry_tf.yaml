@@ -1,0 +1,154 @@
+id: aws-ecr-to-gcp-artifact-registry-tf
+name: "AWS ECR to GCP Artifact Registry (Terraform)"
+description: >
+  Transforms aws_ecr_repository to google_artifact_registry_repository.
+  Both are managed container image registries with similar functionality.
+  ECR lifecycle policies map to Artifact Registry cleanup policies.
+source_provider: aws
+target_provider: gcp
+source_service: ecr
+target_service: artifact-registry
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_ecr_repository"
+    - "aws_ecr_lifecycle_policy"
+    - "aws_ecr_repository_policy"
+    - "aws_ecr_replication_configuration"
+  text_patterns:
+    - "ecr_repository"
+    - "image_tag_mutability"
+    - "image_scanning_configuration"
+    - "scan_on_push"
+    - "encryption_configuration"
+transform:
+  replacement_template: |
+    resource "google_artifact_registry_repository" "{{resource_name}}" {
+      location      = var.region
+      project       = var.project_id
+      repository_id = "{{repository_name}}"
+      description   = "{{description}}"
+      format        = "DOCKER"
+
+      docker_config {
+        immutable_tags = {{immutable_tags}}
+      }
+
+      cleanup_policies {
+        id     = "keep-minimum-versions"
+        action = "KEEP"
+
+        most_recent_versions {
+          keep_count = {{keep_count}}
+        }
+      }
+
+      cleanup_policies {
+        id     = "delete-old-images"
+        action = "DELETE"
+
+        condition {
+          older_than = "{{retention_duration}}"
+        }
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    resource "google_artifact_registry_repository_iam_member" "{{iam_member_name}}" {
+      project    = var.project_id
+      location   = var.region
+      repository = google_artifact_registry_repository.{{resource_name}}.name
+      role       = "roles/artifactregistry.reader"
+      member     = "serviceAccount:{{service_account_email}}"
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    ECR to Artifact Registry mapping:
+      - aws_ecr_repository maps to google_artifact_registry_repository with format=DOCKER.
+      - ECR image_tag_mutability IMMUTABLE maps to docker_config.immutable_tags=true.
+      - ECR image_scanning_configuration scan_on_push maps to Artifact Analysis
+        (separate service, not configured in repository resource).
+      - ECR lifecycle_policy maps to cleanup_policies in Artifact Registry.
+      - ECR repository_policy (IAM) maps to google_artifact_registry_repository_iam_member.
+      - ECR encryption with KMS maps to kms_key_name on the repository.
+      - ECR replication maps to multi-region Artifact Registry repositories.
+      - Docker push/pull URLs change: account.dkr.ecr.region.amazonaws.com/repo
+        becomes region-docker.pkg.dev/project/repo.
+      - Artifact Registry also supports Maven, npm, Python, and other formats.
+base_confidence: 0.88
+tags:
+  - ecr
+  - artifact-registry
+  - containers
+  - terraform
+  - iac
+  - resource-block
+examples:
+  - input: |
+      resource "aws_ecr_repository" "app" {
+        name                 = "my-app"
+        image_tag_mutability = "IMMUTABLE"
+
+        image_scanning_configuration {
+          scan_on_push = true
+        }
+
+        encryption_configuration {
+          encryption_type = "AES256"
+        }
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "aws_ecr_lifecycle_policy" "app" {
+        repository = aws_ecr_repository.app.name
+
+        policy = jsonencode({
+          rules = [
+            {
+              rulePriority = 1
+              description  = "Keep last 30 images"
+              selection = {
+                tagStatus   = "any"
+                countType   = "imageCountMoreThan"
+                countNumber = 30
+              }
+              action = {
+                type = "expire"
+              }
+            }
+          ]
+        })
+      }
+    output: |
+      resource "google_artifact_registry_repository" "app" {
+        location      = var.region
+        project       = var.project_id
+        repository_id = "my-app"
+        description   = "Container repository for my-app"
+        format        = "DOCKER"
+
+        docker_config {
+          immutable_tags = true
+        }
+
+        cleanup_policies {
+          id     = "keep-minimum-versions"
+          action = "KEEP"
+
+          most_recent_versions {
+            keep_count = 30
+          }
+        }
+
+        labels = {
+          environment = "production"
+        }
+      }

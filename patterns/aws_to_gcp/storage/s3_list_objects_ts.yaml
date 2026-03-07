@@ -1,0 +1,70 @@
+id: aws-gcp-s3-list-objects-ts
+name: "S3 ListObjectsV2 to GCS getFiles"
+description: >
+  Transforms AWS S3 ListObjectsV2Command calls to Google Cloud Storage
+  bucket().getFiles() calls in TypeScript. Maps S3 listing parameters
+  such as Prefix and MaxKeys to GCS getFiles options.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { ListObjectsV2Command } from '@aws-sdk/client-s3'"
+  client_names:
+    - "new ListObjectsV2Command"
+  text_patterns:
+    - "ListObjectsV2Command"
+    - ".send(listObjects"
+transform:
+  replacement_template: |
+    const storage = new Storage();
+    const [files] = await storage.bucket(bucketName).getFiles({
+      prefix: prefix,
+      maxResults: maxKeys,
+    });
+  import_additions:
+    - "import { Storage } from '@google-cloud/storage'"
+  import_removals:
+    - "import { ListObjectsV2Command } from '@aws-sdk/client-s3'"
+  notes: >
+    S3 ListObjectsV2Command uses Bucket, Prefix, MaxKeys, and ContinuationToken.
+    GCS getFiles() uses prefix, maxResults, and pageToken as options. S3 returns
+    Contents array with Key/Size/LastModified; GCS returns File objects with
+    name and metadata properties. Pagination differs between services.
+base_confidence: 0.85
+tags:
+  - storage
+  - s3
+  - gcs
+  - list
+  - typescript
+examples:
+  - input: |
+      import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
+
+      const s3 = new S3Client({ region: 'us-east-1' });
+
+      async function listFiles(bucket: string, prefix: string): Promise<string[]> {
+        const command = new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          MaxKeys: 100,
+        });
+        const response = await s3.send(command);
+        return (response.Contents || []).map((obj) => obj.Key!);
+      }
+    output: |
+      import { Storage } from '@google-cloud/storage';
+
+      const storage = new Storage();
+
+      async function listFiles(bucket: string, prefix: string): Promise<string[]> {
+        const [files] = await storage.bucket(bucket).getFiles({
+          prefix: prefix,
+          maxResults: 100,
+        });
+        return files.map((file) => file.name);
+      }

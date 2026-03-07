@@ -1,0 +1,82 @@
+id: aws-gcp-dynamodb-get-item-ts
+name: "DynamoDB GetItem to Firestore Document Get"
+description: >
+  Transforms AWS DynamoDB GetItemCommand calls to Google Cloud Firestore
+  collection().doc().get() calls in TypeScript. Maps DynamoDB table and
+  key parameters to Firestore document references.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { GetItemCommand } from '@aws-sdk/client-dynamodb'"
+  client_names:
+    - "new GetItemCommand"
+  text_patterns:
+    - "GetItemCommand"
+    - ".send(getItem"
+transform:
+  replacement_template: |
+    const firestore = new Firestore();
+    const docSnap = await firestore.collection(tableName).doc(docId).get();
+    const data = docSnap.exists ? docSnap.data() : null;
+  import_additions:
+    - "import { Firestore } from '@google-cloud/firestore'"
+  import_removals:
+    - "import { GetItemCommand } from '@aws-sdk/client-dynamodb'"
+  notes: >
+    DynamoDB GetItemCommand uses TableName and Key with typed attribute values.
+    Firestore doc().get() returns a DocumentSnapshot. Check snapshot.exists before
+    calling snapshot.data(). DynamoDB returns Item with typed attributes; Firestore
+    returns plain objects. ConsistentRead has no direct Firestore equivalent.
+base_confidence: 0.80
+tags:
+  - database
+  - dynamodb
+  - firestore
+  - get
+  - read
+  - typescript
+examples:
+  - input: |
+      import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
+
+      const dynamo = new DynamoDBClient({ region: 'us-east-1' });
+
+      async function getUser(id: string): Promise<Record<string, any> | null> {
+        const command = new GetItemCommand({
+          TableName: 'Users',
+          Key: {
+            id: { S: id },
+          },
+        });
+        const response = await dynamo.send(command);
+        if (!response.Item) {
+          return null;
+        }
+        return {
+          id: response.Item.id.S,
+          name: response.Item.name.S,
+          email: response.Item.email.S,
+        };
+      }
+    output: |
+      import { Firestore } from '@google-cloud/firestore';
+
+      const firestore = new Firestore();
+
+      async function getUser(id: string): Promise<Record<string, any> | null> {
+        const docSnap = await firestore.collection('Users').doc(id).get();
+        if (!docSnap.exists) {
+          return null;
+        }
+        const data = docSnap.data()!;
+        return {
+          id: docSnap.id,
+          name: data.name,
+          email: data.email,
+        };
+      }

@@ -1,0 +1,77 @@
+id: azure-blob-list-to-gcs-list-py
+name: "Azure Blob list_blobs to GCS bucket.list_blobs (Python)"
+description: >
+  Transforms Azure Blob Storage list_blobs calls on a ContainerClient to
+  GCS bucket.list_blobs(). Maps prefix and delimiter parameters to their
+  GCS equivalents for listing objects in a bucket.
+source_provider: azure
+target_provider: gcp
+source_service: blob-storage
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  imports:
+    - "from azure.storage.blob import BlobServiceClient"
+    - "from azure.storage.blob import ContainerClient"
+  text_patterns:
+    - "list_blobs"
+    - "container_client"
+    - "name_starts_with"
+    - "walk_blobs"
+transform:
+  replacement_template: |
+    bucket = storage_client.bucket("{{bucket_name}}")
+    blobs = bucket.list_blobs(prefix="{{prefix}}", delimiter="{{delimiter}}")
+    for blob in blobs:
+        print(blob.name)
+  import_additions:
+    - "from google.cloud import storage"
+  import_removals:
+    - "from azure.storage.blob import BlobServiceClient"
+    - "from azure.storage.blob import ContainerClient"
+  notes: >
+    Azure list_blobs(name_starts_with=...) maps to GCS list_blobs(prefix=...).
+    Azure walk_blobs(name_starts_with=...) provides hierarchical listing with
+    delimiter; GCS uses list_blobs(prefix=..., delimiter="/") similarly.
+    Azure BlobProperties maps to GCS Blob object attributes.
+    Azure list_blobs returns an ItemPaged iterator; GCS returns an HTTPIterator.
+    Azure results_per_page maps to GCS max_results/page_size.
+    Both support pagination via continuation tokens.
+base_confidence: 0.85
+tags:
+  - azure-blob
+  - cloud-storage
+  - python
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      from azure.storage.blob import BlobServiceClient
+
+      blob_service = BlobServiceClient.from_connection_string(conn_str)
+      container_client = blob_service.get_container_client("my-container")
+
+      blobs = container_client.list_blobs(name_starts_with="data/")
+      for blob in blobs:
+          print(f"{blob.name} - {blob.size} bytes")
+    output: |
+      from google.cloud import storage
+
+      storage_client = storage.Client()
+      bucket = storage_client.bucket("my-container")
+
+      blobs = bucket.list_blobs(prefix="data/")
+      for blob in blobs:
+          print(f"{blob.name} - {blob.size} bytes")
+  - input: |
+      container_client = blob_service.get_container_client("reports")
+      blobs = container_client.walk_blobs(name_starts_with="2024/", delimiter="/")
+      for blob in blobs:
+          print(blob.name)
+    output: |
+      bucket = storage_client.bucket("reports")
+      blobs = bucket.list_blobs(prefix="2024/", delimiter="/")
+      for blob in blobs:
+          print(blob.name)

@@ -1,0 +1,121 @@
+id: sns-cfn-to-pubsub-tf
+name: "SNS CloudFormation to Pub/Sub (Terraform)"
+description: >
+  Transforms an AWS::SNS::Topic CloudFormation resource definition to a
+  google_pubsub_topic Terraform resource. SNS fan-out semantics map naturally
+  to Pub/Sub's publish-subscribe model with multiple subscriptions.
+source_provider: aws
+target_provider: gcp
+source_service: sns
+target_service: pubsub
+language: cloudformation
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "AWS::SNS::Topic"
+  text_patterns:
+    - "Type: AWS::SNS::Topic"
+    - "TopicName:"
+    - "Subscription:"
+    - "DisplayName:"
+transform:
+  replacement_template: |
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_retention_duration = "86400s"
+
+      message_storage_policy {
+        allowed_persistence_regions = [
+          "{{region}}"
+        ]
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    # For each SNS subscription, create a Pub/Sub push subscription
+    resource "google_pubsub_subscription" "{{resource_name}}_sub" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{resource_name}}.id
+      project = var.project_id
+
+      push_config {
+        push_endpoint = "{{endpoint}}"
+      }
+
+      ack_deadline_seconds = 20
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    SNS and Pub/Sub are both publish-subscribe systems with strong feature
+    parity. SNS email/SMS subscriptions have no Pub/Sub equivalent; use
+    Cloud Functions or third-party services instead. SNS message filtering
+    maps to Pub/Sub subscription filters. SNS FIFO topics map to Pub/Sub
+    ordering keys. CloudFormation intrinsic functions must be converted to
+    Terraform expressions. KmsMasterKeyId maps to
+    google_pubsub_topic.kms_key_name with a Cloud KMS key.
+base_confidence: 0.78
+tags:
+  - sns
+  - pubsub
+  - cloudformation
+  - terraform
+  - messaging
+  - pub-sub
+  - resource-block
+examples:
+  - input: |
+      Resources:
+        NotificationTopic:
+          Type: AWS::SNS::Topic
+          Properties:
+            TopicName: !Sub "${AWS::StackName}-notifications"
+            DisplayName: Order Notifications
+            Subscription:
+              - Protocol: https
+                Endpoint: !Sub "https://api.${Domain}/webhooks/orders"
+              - Protocol: lambda
+                Endpoint: !GetAtt NotifyFunction.Arn
+            Tags:
+              - Key: Environment
+                Value: !Ref Environment
+    output: |
+      resource "google_pubsub_topic" "notification_topic" {
+        name    = "${var.project_name}-notifications"
+        project = var.project_id
+
+        message_retention_duration = "86400s"
+
+        labels = {
+          environment = var.environment
+        }
+      }
+
+      resource "google_pubsub_subscription" "notification_topic_https_sub" {
+        name    = "${var.project_name}-notifications-https"
+        topic   = google_pubsub_topic.notification_topic.id
+        project = var.project_id
+
+        push_config {
+          push_endpoint = "https://api.${var.domain}/webhooks/orders"
+        }
+
+        ack_deadline_seconds = 20
+      }
+
+      resource "google_pubsub_subscription" "notification_topic_function_sub" {
+        name    = "${var.project_name}-notifications-function"
+        topic   = google_pubsub_topic.notification_topic.id
+        project = var.project_id
+
+        push_config {
+          push_endpoint = google_cloudfunctions2_function.notify_function.url
+        }
+
+        ack_deadline_seconds = 20
+      }

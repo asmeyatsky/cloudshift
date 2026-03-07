@@ -1,0 +1,146 @@
+id: aws-vpc-to-gcp-vpc-tf
+name: "AWS VPC to GCP VPC Network (Terraform)"
+description: >
+  Transforms aws_vpc and aws_subnet to google_compute_network and
+  google_compute_subnetwork. AWS VPCs with CIDR blocks map to GCP VPC
+  networks with custom-mode subnets. AWS subnets with availability zones
+  map to GCP subnetworks with regions.
+source_provider: aws
+target_provider: gcp
+source_service: vpc
+target_service: compute-network
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_vpc"
+    - "aws_subnet"
+    - "aws_internet_gateway"
+    - "aws_nat_gateway"
+    - "aws_route_table"
+  text_patterns:
+    - "cidr_block"
+    - "availability_zone"
+    - "enable_dns_support"
+    - "map_public_ip_on_launch"
+transform:
+  replacement_template: |
+    resource "google_compute_network" "{{resource_name}}" {
+      name                    = "{{network_name}}"
+      project                 = var.project_id
+      auto_create_subnetworks = false
+      routing_mode            = "REGIONAL"
+    }
+
+    resource "google_compute_subnetwork" "{{subnet_name}}" {
+      name          = "{{subnet_name}}"
+      project       = var.project_id
+      region        = "{{region}}"
+      network       = google_compute_network.{{resource_name}}.id
+      ip_cidr_range = "{{cidr_block}}"
+
+      private_ip_google_access = true
+
+      secondary_ip_range {
+        range_name    = "{{secondary_range_name}}"
+        ip_cidr_range = "{{secondary_cidr}}"
+      }
+
+      log_config {
+        aggregation_interval = "INTERVAL_5_SEC"
+        flow_sampling        = 0.5
+      }
+    }
+
+    resource "google_compute_router" "{{router_name}}" {
+      name    = "{{router_name}}"
+      project = var.project_id
+      region  = "{{region}}"
+      network = google_compute_network.{{resource_name}}.id
+    }
+
+    resource "google_compute_router_nat" "{{nat_name}}" {
+      name                               = "{{nat_name}}"
+      project                            = var.project_id
+      region                             = "{{region}}"
+      router                             = google_compute_router.{{router_name}}.name
+      nat_ip_allocate_option             = "AUTO_ONLY"
+      source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    AWS VPC maps to google_compute_network with auto_create_subnetworks=false
+    for custom mode. AWS subnets map to google_compute_subnetwork. Key differences:
+    GCP VPCs are global (not regional), subnets are regional (not zonal).
+    AWS internet gateway is implicit in GCP (routes to default internet gateway).
+    AWS NAT gateway maps to Cloud NAT via google_compute_router_nat.
+    AWS route tables map to google_compute_route resources.
+    CIDR blocks are specified at the subnet level in GCP, not the VPC level.
+base_confidence: 0.82
+tags:
+  - vpc
+  - networking
+  - terraform
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_vpc" "main" {
+        cidr_block           = "10.0.0.0/16"
+        enable_dns_support   = true
+        enable_dns_hostnames = true
+
+        tags = {
+          Name        = "main-vpc"
+          Environment = "production"
+        }
+      }
+
+      resource "aws_subnet" "public" {
+        vpc_id                  = aws_vpc.main.id
+        cidr_block              = "10.0.1.0/24"
+        availability_zone       = "us-east-1a"
+        map_public_ip_on_launch = true
+
+        tags = {
+          Name = "public-subnet-1"
+        }
+      }
+
+      resource "aws_subnet" "private" {
+        vpc_id            = aws_vpc.main.id
+        cidr_block        = "10.0.10.0/24"
+        availability_zone = "us-east-1a"
+
+        tags = {
+          Name = "private-subnet-1"
+        }
+      }
+    output: |
+      resource "google_compute_network" "main" {
+        name                    = "main-vpc"
+        project                 = var.project_id
+        auto_create_subnetworks = false
+        routing_mode            = "REGIONAL"
+      }
+
+      resource "google_compute_subnetwork" "public" {
+        name          = "public-subnet-1"
+        project       = var.project_id
+        region        = "us-central1"
+        network       = google_compute_network.main.id
+        ip_cidr_range = "10.0.1.0/24"
+
+        private_ip_google_access = true
+      }
+
+      resource "google_compute_subnetwork" "private" {
+        name          = "private-subnet-1"
+        project       = var.project_id
+        region        = "us-central1"
+        network       = google_compute_network.main.id
+        ip_cidr_range = "10.0.10.0/24"
+
+        private_ip_google_access = true
+      }

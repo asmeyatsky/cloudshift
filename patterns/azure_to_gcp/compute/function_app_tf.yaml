@@ -1,0 +1,160 @@
+id: azure-function-app-to-cloud-functions-tf
+name: "Azure Function App to Cloud Functions (Terraform)"
+description: >
+  Transforms azurerm_linux_function_app to google_cloudfunctions2_function.
+  Maps Azure Functions app settings, runtime configuration, and storage
+  bindings to Cloud Functions v2 equivalents.
+source_provider: azure
+target_provider: gcp
+source_service: functions
+target_service: cloud-functions
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_linux_function_app"
+    - "azurerm_windows_function_app"
+    - "azurerm_function_app"
+    - "azurerm_service_plan"
+  text_patterns:
+    - "site_config"
+    - "application_stack"
+    - "app_settings"
+    - "FUNCTIONS_WORKER_RUNTIME"
+    - "storage_account_name"
+transform:
+  replacement_template: |
+    resource "google_cloudfunctions2_function" "{{resource_name}}" {
+      name     = "{{function_name}}"
+      location = "{{region}}"
+      project  = var.project_id
+
+      build_config {
+        runtime     = "{{runtime}}"
+        entry_point = "{{entry_point}}"
+
+        source {
+          storage_source {
+            bucket = "{{source_bucket}}"
+            object = "{{source_object}}"
+          }
+        }
+      }
+
+      service_config {
+        max_instance_count    = {{max_instances}}
+        available_memory      = "{{memory}}"
+        timeout_seconds       = {{timeout}}
+        service_account_email = {{service_account}}
+
+        environment_variables = {
+          {{env_vars}}
+        }
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure Function App requires a Service Plan and Storage Account;
+    Cloud Functions v2 manages infrastructure automatically.
+    Azure app_settings map to Cloud Functions environment_variables.
+    Azure application_stack runtime maps to Cloud Functions runtime.
+    Azure Consumption plan maps to Cloud Functions (auto-scaling, pay-per-use).
+    Azure Premium/Dedicated plans map to Cloud Run (more control).
+    Azure function bindings (triggers, input, output) are configured in
+    function.json; Cloud Functions uses event triggers in Terraform.
+    Azure FUNCTIONS_WORKER_RUNTIME maps to Cloud Functions runtime parameter.
+    Azure slots (staging/production) map to Cloud Functions traffic splitting
+    via Cloud Run revisions.
+    Azure Application Insights integration maps to Cloud Functions
+    built-in Cloud Logging and Cloud Trace integration.
+base_confidence: 0.78
+tags:
+  - azure-functions
+  - cloud-functions
+  - terraform
+  - compute
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_service_plan" "main" {
+        name                = "my-app-plan"
+        resource_group_name = azurerm_resource_group.main.name
+        location            = azurerm_resource_group.main.location
+        os_type             = "Linux"
+        sku_name            = "Y1"
+      }
+
+      resource "azurerm_linux_function_app" "main" {
+        name                = "my-function-app"
+        resource_group_name = azurerm_resource_group.main.name
+        location            = azurerm_resource_group.main.location
+        service_plan_id     = azurerm_service_plan.main.id
+
+        storage_account_name       = azurerm_storage_account.main.name
+        storage_account_access_key = azurerm_storage_account.main.primary_access_key
+
+        site_config {
+          application_stack {
+            python_version = "3.11"
+          }
+        }
+
+        app_settings = {
+          "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.main.instrumentation_key
+          "DB_CONNECTION"                  = var.db_connection_string
+        }
+
+        tags = {
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_storage_bucket" "function_source" {
+        name     = "my-function-app-source"
+        location = "US"
+        project  = var.project_id
+      }
+
+      resource "google_storage_bucket_object" "function_zip" {
+        name   = "function-source.zip"
+        bucket = google_storage_bucket.function_source.name
+        source = "function-source.zip"
+      }
+
+      resource "google_cloudfunctions2_function" "main" {
+        name     = "my-function-app"
+        location = "us-central1"
+        project  = var.project_id
+
+        build_config {
+          runtime     = "python311"
+          entry_point = "main"
+
+          source {
+            storage_source {
+              bucket = google_storage_bucket.function_source.name
+              object = google_storage_bucket_object.function_zip.name
+            }
+          }
+        }
+
+        service_config {
+          max_instance_count = 100
+          available_memory   = "256M"
+          timeout_seconds    = 300
+
+          environment_variables = {
+            DB_CONNECTION = var.db_connection_string
+          }
+        }
+
+        labels = {
+          environment = "production"
+        }
+      }

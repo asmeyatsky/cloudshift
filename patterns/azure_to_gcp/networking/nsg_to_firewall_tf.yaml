@@ -1,0 +1,159 @@
+id: azure-nsg-to-gcp-firewall-tf
+name: "Azure NSG to GCP Firewall Rules (Terraform)"
+description: >
+  Transforms azurerm_network_security_group and azurerm_network_security_rule
+  to google_compute_firewall. Maps Azure NSG inbound/outbound rules with
+  priority to GCP firewall rules with target tags.
+source_provider: azure
+target_provider: gcp
+source_service: network-security-group
+target_service: compute-firewall
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_network_security_group"
+    - "azurerm_network_security_rule"
+    - "azurerm_subnet_network_security_group_association"
+  text_patterns:
+    - "security_rule"
+    - "direction"
+    - "access"
+    - "protocol"
+    - "source_port_range"
+    - "destination_port_range"
+    - "source_address_prefix"
+    - "destination_address_prefix"
+    - "priority"
+transform:
+  replacement_template: |
+    resource "google_compute_firewall" "{{resource_name}}" {
+      name    = "{{rule_name}}"
+      network = google_compute_network.{{network_name}}.id
+      project = var.project_id
+
+      allow {
+        protocol = "{{protocol}}"
+        ports    = [{{ports}}]
+      }
+
+      source_ranges = [{{source_ranges}}]
+      target_tags   = [{{target_tags}}]
+
+      priority = {{priority}}
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure NSG is a container for rules applied to subnets/NICs;
+    GCP firewall rules are individual resources applied to a VPC network.
+    Azure NSG rules have direction (Inbound/Outbound); GCP uses separate
+    allow/deny blocks with direction attribute (INGRESS/EGRESS).
+    Azure priority (100-4096, lower = higher priority) maps to GCP
+    priority (0-65535, lower = higher priority).
+    Azure "Allow" access maps to GCP "allow" block; Azure "Deny" maps
+    to GCP "deny" block.
+    Azure source_address_prefix maps to GCP source_ranges.
+    Azure destination_address_prefix maps to GCP destination_ranges.
+    Azure NSG association to subnets maps to GCP target_tags on instances
+    or target_service_accounts.
+    Azure service tags (Internet, VirtualNetwork) map to GCP predefined
+    ranges (0.0.0.0/0 for internet).
+    Azure * (any port) maps to omitting ports in GCP allow block.
+base_confidence: 0.75
+tags:
+  - nsg
+  - firewall
+  - terraform
+  - networking
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_network_security_group" "web" {
+        name                = "web-nsg"
+        location            = azurerm_resource_group.main.location
+        resource_group_name = azurerm_resource_group.main.name
+
+        security_rule {
+          name                       = "allow-http"
+          priority                   = 100
+          direction                  = "Inbound"
+          access                     = "Allow"
+          protocol                   = "Tcp"
+          source_port_range          = "*"
+          destination_port_range     = "80"
+          source_address_prefix      = "*"
+          destination_address_prefix = "*"
+        }
+
+        security_rule {
+          name                       = "allow-https"
+          priority                   = 110
+          direction                  = "Inbound"
+          access                     = "Allow"
+          protocol                   = "Tcp"
+          source_port_range          = "*"
+          destination_port_range     = "443"
+          source_address_prefix      = "*"
+          destination_address_prefix = "*"
+        }
+
+        security_rule {
+          name                       = "deny-all"
+          priority                   = 4096
+          direction                  = "Inbound"
+          access                     = "Deny"
+          protocol                   = "*"
+          source_port_range          = "*"
+          destination_port_range     = "*"
+          source_address_prefix      = "*"
+          destination_address_prefix = "*"
+        }
+      }
+    output: |
+      resource "google_compute_firewall" "allow_http" {
+        name    = "allow-http"
+        network = google_compute_network.main.id
+        project = var.project_id
+
+        allow {
+          protocol = "tcp"
+          ports    = ["80"]
+        }
+
+        source_ranges = ["0.0.0.0/0"]
+        target_tags   = ["web"]
+        priority      = 100
+      }
+
+      resource "google_compute_firewall" "allow_https" {
+        name    = "allow-https"
+        network = google_compute_network.main.id
+        project = var.project_id
+
+        allow {
+          protocol = "tcp"
+          ports    = ["443"]
+        }
+
+        source_ranges = ["0.0.0.0/0"]
+        target_tags   = ["web"]
+        priority      = 110
+      }
+
+      # GCP has an implied deny-all ingress rule, so explicit deny-all is not needed.
+      # If needed, use a deny rule:
+      resource "google_compute_firewall" "deny_all" {
+        name    = "deny-all-ingress"
+        network = google_compute_network.main.id
+        project = var.project_id
+
+        deny {
+          protocol = "all"
+        }
+
+        source_ranges = ["0.0.0.0/0"]
+        target_tags   = ["web"]
+        priority      = 65534
+      }

@@ -1,0 +1,78 @@
+id: s3-presigned-url-to-gcs-signed-url-py
+name: "S3 generate_presigned_url to GCS generate_signed_url (Python)"
+description: >
+  Transforms S3 generate_presigned_url and generate_presigned_post calls
+  to GCS blob.generate_signed_url(). AWS presigned URLs use the STS signing
+  process while GCS signed URLs use service account credentials.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "generate_presigned_url"
+    - "generate_presigned_post"
+  text_patterns:
+    - "generate_presigned_url"
+    - "generate_presigned_post"
+transform:
+  replacement_template: |
+    blob.generate_signed_url(
+        version="v4",
+        expiration=datetime.timedelta(minutes=15),
+        method="GET",
+    )
+  import_additions:
+    - "from google.cloud import storage"
+    - "import datetime"
+  import_removals:
+    - "import boto3"
+  notes: >
+    GCS signed URLs require service account credentials with the
+    iam.serviceAccounts.signBlob permission. The expiration is specified
+    as a timedelta rather than an integer number of seconds. For presigned
+    POST equivalents, use generate_signed_url with method="PUT" or a
+    signed policy document.
+base_confidence: 0.80
+tags:
+  - s3
+  - cloud-storage
+  - presigned
+  - signed-url
+  - python
+examples:
+  - input: |
+      s3_client = boto3.client("s3")
+      url = s3_client.generate_presigned_url(
+          "get_object",
+          Params={"Bucket": bucket_name, "Key": object_key},
+          ExpiresIn=3600,
+      )
+    output: |
+      storage_client = storage.Client()
+      bucket = storage_client.bucket(bucket_name)
+      blob = bucket.blob(object_key)
+      url = blob.generate_signed_url(
+          version="v4",
+          expiration=datetime.timedelta(hours=1),
+          method="GET",
+      )
+  - input: |
+      s3_client = boto3.client("s3")
+      response = s3_client.generate_presigned_post(
+          Bucket=bucket_name,
+          Key=object_key,
+          ExpiresIn=3600,
+      )
+    output: |
+      storage_client = storage.Client()
+      bucket = storage_client.bucket(bucket_name)
+      blob = bucket.blob(object_key)
+      url = blob.generate_signed_url(
+          version="v4",
+          expiration=datetime.timedelta(hours=1),
+          method="PUT",
+          content_type="application/octet-stream",
+      )

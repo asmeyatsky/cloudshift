@@ -1,0 +1,173 @@
+id: rds-cfn-to-cloud-sql-tf
+name: "RDS CloudFormation to Cloud SQL (Terraform)"
+description: >
+  Transforms an AWS::RDS::DBInstance CloudFormation resource definition to a
+  google_sql_database_instance Terraform resource. RDS managed database
+  instances map to Cloud SQL instances with equivalent engine support for
+  MySQL, PostgreSQL, and SQL Server.
+source_provider: aws
+target_provider: gcp
+source_service: rds
+target_service: cloud-sql
+language: cloudformation
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "AWS::RDS::DBInstance"
+  text_patterns:
+    - "Type: AWS::RDS::DBInstance"
+    - "Engine:"
+    - "DBInstanceClass:"
+    - "AllocatedStorage:"
+    - "MasterUsername:"
+    - "MultiAZ:"
+transform:
+  replacement_template: |
+    resource "google_sql_database_instance" "{{resource_name}}" {
+      name             = "{{instance_name}}"
+      database_version = "{{database_version}}"
+      region           = "{{region}}"
+      project          = var.project_id
+
+      deletion_protection = {{deletion_protection}}
+
+      settings {
+        tier              = "{{machine_type}}"
+        availability_type = "{{availability_type}}"
+        disk_size         = {{disk_size}}
+        disk_type         = "PD_SSD"
+        disk_autoresize   = true
+
+        backup_configuration {
+          enabled                        = true
+          binary_log_enabled             = {{binary_log_enabled}}
+          start_time                     = "03:00"
+          point_in_time_recovery_enabled = true
+
+          backup_retention_settings {
+            retained_backups = {{backup_retention_count}}
+          }
+        }
+
+        ip_configuration {
+          ipv4_enabled    = false
+          private_network = google_compute_network.{{network_name}}.id
+        }
+
+        database_flags {
+          name  = "{{flag_name}}"
+          value = "{{flag_value}}"
+        }
+
+        user_labels = {
+          {{labels}}
+        }
+      }
+    }
+
+    resource "google_sql_database" "{{resource_name}}_db" {
+      name     = "{{db_name}}"
+      instance = google_sql_database_instance.{{resource_name}}.name
+      project  = var.project_id
+    }
+
+    resource "google_sql_user" "{{resource_name}}_user" {
+      name     = "{{master_username}}"
+      instance = google_sql_database_instance.{{resource_name}}.name
+      password = var.{{resource_name}}_password
+      project  = var.project_id
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    RDS instance classes map to Cloud SQL machine types (e.g., db.t3.medium
+    maps roughly to db-custom-2-7680). Engine versions map directly for
+    MySQL, PostgreSQL, and SQL Server (Aurora has no direct equivalent;
+    consider Cloud SQL or AlloyDB). MultiAZ maps to availability_type
+    REGIONAL. RDS parameter groups map to Cloud SQL database_flags.
+    RDS subnet groups map to ip_configuration private_network. Storage
+    autoscaling is enabled by default in Cloud SQL. CloudFormation intrinsic
+    functions must be converted to Terraform expressions.
+base_confidence: 0.70
+tags:
+  - rds
+  - cloud-sql
+  - cloudformation
+  - terraform
+  - database
+  - relational
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      Resources:
+        AppDatabase:
+          Type: AWS::RDS::DBInstance
+          DeletionPolicy: Snapshot
+          Properties:
+            DBInstanceIdentifier: !Sub "${AWS::StackName}-db"
+            Engine: postgres
+            EngineVersion: "15.4"
+            DBInstanceClass: db.r6g.large
+            AllocatedStorage: 100
+            StorageType: gp3
+            MasterUsername: admin
+            MasterUserPassword: !Ref DBPassword
+            MultiAZ: true
+            DBSubnetGroupName: !Ref DBSubnetGroup
+            VPCSecurityGroups:
+              - !Ref DBSecurityGroup
+            BackupRetentionPeriod: 7
+            StorageEncrypted: true
+            Tags:
+              - Key: Environment
+                Value: !Ref Environment
+    output: |
+      resource "google_sql_database_instance" "app_database" {
+        name             = "${var.project_name}-db"
+        database_version = "POSTGRES_15"
+        region           = var.region
+        project          = var.project_id
+
+        deletion_protection = true
+
+        settings {
+          tier              = "db-custom-2-8192"
+          availability_type = "REGIONAL"
+          disk_size         = 100
+          disk_type         = "PD_SSD"
+          disk_autoresize   = true
+
+          backup_configuration {
+            enabled                        = true
+            start_time                     = "03:00"
+            point_in_time_recovery_enabled = true
+
+            backup_retention_settings {
+              retained_backups = 7
+            }
+          }
+
+          ip_configuration {
+            ipv4_enabled    = false
+            private_network = google_compute_network.app_vpc.id
+          }
+
+          user_labels = {
+            environment = var.environment
+          }
+        }
+      }
+
+      resource "google_sql_database" "app_database_db" {
+        name     = "${var.project_name}-db"
+        instance = google_sql_database_instance.app_database.name
+        project  = var.project_id
+      }
+
+      resource "google_sql_user" "app_database_user" {
+        name     = "admin"
+        instance = google_sql_database_instance.app_database.name
+        password = var.app_database_password
+        project  = var.project_id
+      }

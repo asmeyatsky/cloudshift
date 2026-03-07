@@ -1,0 +1,98 @@
+id: azure-servicebus-receive-to-pubsub-pull-py
+name: "Azure Service Bus receive_messages to Pub/Sub pull (Python)"
+description: >
+  Transforms Azure Service Bus receiver.receive_messages() calls to
+  GCP Pub/Sub subscriber.pull(). Maps Service Bus message receiving
+  and completion to Pub/Sub pull and acknowledge patterns.
+source_provider: azure
+target_provider: gcp
+source_service: service-bus
+target_service: pubsub
+language: python
+construct_type: method_call
+match_pattern:
+  imports:
+    - "from azure.servicebus import ServiceBusClient"
+    - "from azure.servicebus import ServiceBusReceiver"
+  text_patterns:
+    - "receive_messages"
+    - "get_queue_receiver"
+    - "get_subscription_receiver"
+    - "complete_message"
+    - "receiver"
+    - "max_message_count"
+    - "max_wait_time"
+transform:
+  replacement_template: |
+    subscription_path = subscriber.subscription_path("{{project_id}}", "{{subscription_name}}")
+    response = subscriber.pull(
+        request={"subscription": subscription_path, "max_messages": {{max_messages}}}
+    )
+    for msg in response.received_messages:
+        data = msg.message.data.decode("utf-8")
+        # Process message
+    ack_ids = [msg.ack_id for msg in response.received_messages]
+    if ack_ids:
+        subscriber.acknowledge(
+            request={"subscription": subscription_path, "ack_ids": ack_ids}
+        )
+  import_additions:
+    - "from google.cloud import pubsub_v1"
+  import_removals:
+    - "from azure.servicebus import ServiceBusClient"
+    - "from azure.servicebus import ServiceBusReceiver"
+  notes: >
+    Azure receiver.receive_messages(max_message_count=N) maps to
+    subscriber.pull(max_messages=N).
+    Azure receiver.complete_message(msg) maps to subscriber.acknowledge().
+    Azure receiver.abandon_message(msg) maps to nack or letting the
+    ack deadline expire in Pub/Sub.
+    Azure receiver.dead_letter_message(msg) maps to Pub/Sub dead-letter
+    topic configuration (automatic after max delivery attempts).
+    Azure peek_lock mode is similar to Pub/Sub pull (ack required).
+    Azure receive_and_delete mode has no direct Pub/Sub equivalent.
+    Azure max_wait_time has no direct pull equivalent; Pub/Sub pull
+    returns immediately with available messages.
+    For streaming receive, consider Pub/Sub streaming pull or push subscriptions.
+base_confidence: 0.78
+tags:
+  - service-bus
+  - pubsub
+  - python
+  - messaging
+  - method-call
+  - medium-complexity
+examples:
+  - input: |
+      from azure.servicebus import ServiceBusClient
+
+      servicebus_client = ServiceBusClient.from_connection_string(conn_str)
+
+      with servicebus_client.get_queue_receiver("orders") as receiver:
+          messages = receiver.receive_messages(
+              max_message_count=10,
+              max_wait_time=30
+          )
+          for msg in messages:
+              body = json.loads(str(msg))
+              process_order(body)
+              receiver.complete_message(msg)
+    output: |
+      from google.cloud import pubsub_v1
+      import json
+
+      subscriber = pubsub_v1.SubscriberClient()
+      subscription_path = subscriber.subscription_path("my-project", "orders-sub")
+
+      response = subscriber.pull(
+          request={"subscription": subscription_path, "max_messages": 10}
+      )
+      for msg in response.received_messages:
+          body = json.loads(msg.message.data.decode("utf-8"))
+          process_order(body)
+
+      ack_ids = [msg.ack_id for msg in response.received_messages]
+      if ack_ids:
+          subscriber.acknowledge(
+              request={"subscription": subscription_path, "ack_ids": ack_ids}
+          )

@@ -1,0 +1,152 @@
+id: sqs-cfn-to-pubsub-tf
+name: "SQS CloudFormation to Pub/Sub (Terraform)"
+description: >
+  Transforms an AWS::SQS::Queue CloudFormation resource definition to
+  google_pubsub_topic and google_pubsub_subscription Terraform resources.
+  SQS queue semantics map to a Pub/Sub topic with a pull subscription to
+  achieve similar point-to-point messaging behavior.
+source_provider: aws
+target_provider: gcp
+source_service: sqs
+target_service: pubsub
+language: cloudformation
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "AWS::SQS::Queue"
+  text_patterns:
+    - "Type: AWS::SQS::Queue"
+    - "QueueName:"
+    - "VisibilityTimeout:"
+    - "MessageRetentionPeriod:"
+    - "RedrivePolicy:"
+transform:
+  replacement_template: |
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_retention_duration = "{{retention_duration}}s"
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    resource "google_pubsub_subscription" "{{resource_name}}_sub" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{resource_name}}.id
+      project = var.project_id
+
+      ack_deadline_seconds       = {{ack_deadline}}
+      message_retention_duration = "{{message_retention}}s"
+      retain_acked_messages      = false
+
+      expiration_policy {
+        ttl = ""
+      }
+
+      retry_policy {
+        minimum_backoff = "10s"
+        maximum_backoff = "600s"
+      }
+    }
+
+    # Dead-letter equivalent (if RedrivePolicy is set)
+    resource "google_pubsub_topic" "{{resource_name}}_dlq" {
+      name    = "{{topic_name}}-dlq"
+      project = var.project_id
+    }
+
+    resource "google_pubsub_subscription" "{{resource_name}}_dlq_sub" {
+      name    = "{{subscription_name}}-dlq"
+      topic   = google_pubsub_topic.{{resource_name}}_dlq.id
+      project = var.project_id
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    SQS is a point-to-point queue while Pub/Sub is publish-subscribe. A Pub/Sub
+    topic with a single pull subscription approximates SQS behavior.
+    VisibilityTimeout maps to ack_deadline_seconds. MessageRetentionPeriod maps
+    to message_retention_duration. SQS RedrivePolicy maps to Pub/Sub
+    dead_letter_policy. FIFO queues have no direct Pub/Sub equivalent; consider
+    ordering keys. DelaySeconds has no direct equivalent; implement in
+    application logic. CloudFormation intrinsic functions must be converted
+    to Terraform expressions.
+base_confidence: 0.72
+tags:
+  - sqs
+  - pubsub
+  - cloudformation
+  - terraform
+  - messaging
+  - queue
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      Resources:
+        OrderQueue:
+          Type: AWS::SQS::Queue
+          Properties:
+            QueueName: !Sub "${AWS::StackName}-orders"
+            VisibilityTimeout: 30
+            MessageRetentionPeriod: 345600
+            RedrivePolicy:
+              deadLetterTargetArn: !GetAtt OrderDLQ.Arn
+              maxReceiveCount: 3
+            Tags:
+              - Key: Environment
+                Value: !Ref Environment
+        OrderDLQ:
+          Type: AWS::SQS::Queue
+          Properties:
+            QueueName: !Sub "${AWS::StackName}-orders-dlq"
+            MessageRetentionPeriod: 1209600
+    output: |
+      resource "google_pubsub_topic" "order_queue" {
+        name    = "${var.project_name}-orders"
+        project = var.project_id
+
+        message_retention_duration = "345600s"
+
+        labels = {
+          environment = var.environment
+        }
+      }
+
+      resource "google_pubsub_subscription" "order_queue_sub" {
+        name    = "${var.project_name}-orders-sub"
+        topic   = google_pubsub_topic.order_queue.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 30
+        message_retention_duration = "345600s"
+        retain_acked_messages      = false
+
+        expiration_policy {
+          ttl = ""
+        }
+
+        dead_letter_policy {
+          dead_letter_topic     = google_pubsub_topic.order_queue_dlq.id
+          max_delivery_attempts = 3
+        }
+
+        retry_policy {
+          minimum_backoff = "10s"
+          maximum_backoff = "600s"
+        }
+      }
+
+      resource "google_pubsub_topic" "order_queue_dlq" {
+        name    = "${var.project_name}-orders-dlq"
+        project = var.project_id
+      }
+
+      resource "google_pubsub_subscription" "order_queue_dlq_sub" {
+        name    = "${var.project_name}-orders-dlq-sub"
+        topic   = google_pubsub_topic.order_queue_dlq.id
+        project = var.project_id
+      }

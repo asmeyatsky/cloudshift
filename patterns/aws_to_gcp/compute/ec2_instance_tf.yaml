@@ -1,0 +1,152 @@
+id: aws-ec2-instance-to-gcp-compute-instance-tf
+name: "AWS EC2 Instance to GCP Compute Instance (Terraform)"
+description: >
+  Transforms aws_instance Terraform resource to google_compute_instance.
+  Maps AMI to GCP image, instance_type to machine_type, key_name to
+  metadata ssh-keys, user_data to metadata startup-script, and security
+  groups to network tags.
+source_provider: aws
+target_provider: gcp
+source_service: ec2
+target_service: compute-engine
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_instance"
+    - "aws_key_pair"
+    - "aws_eip"
+    - "aws_eip_association"
+  text_patterns:
+    - "ami"
+    - "instance_type"
+    - "key_name"
+    - "user_data"
+    - "vpc_security_group_ids"
+    - "subnet_id"
+transform:
+  replacement_template: |
+    resource "google_compute_instance" "{{resource_name}}" {
+      name         = "{{instance_name}}"
+      project      = var.project_id
+      zone         = "{{zone}}"
+      machine_type = "{{machine_type}}"
+
+      boot_disk {
+        initialize_params {
+          image = "{{image}}"
+          size  = {{disk_size}}
+          type  = "pd-ssd"
+        }
+      }
+
+      network_interface {
+        network    = google_compute_network.{{network_name}}.id
+        subnetwork = google_compute_subnetwork.{{subnet_name}}.id
+
+        access_config {
+          # Ephemeral public IP (omit block for no public IP)
+        }
+      }
+
+      metadata = {
+        ssh-keys       = "{{username}}:${file("{{public_key_path}}")}"
+      }
+
+      metadata_startup_script = <<-EOT
+        {{startup_script}}
+      EOT
+
+      tags = ["{{network_tags}}"]
+
+      labels = {
+        {{labels}}
+      }
+
+      service_account {
+        email  = google_service_account.{{sa_name}}.email
+        scopes = ["cloud-platform"]
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Instance type mapping: t3.micro -> e2-micro, t3.small -> e2-small,
+    t3.medium -> e2-medium, m5.large -> n2-standard-2, m5.xlarge -> n2-standard-4,
+    c5.large -> c2-standard-4, r5.large -> n2-highmem-2.
+    AMI mapping requires manual lookup: Amazon Linux -> cos or debian,
+    Ubuntu AMIs -> ubuntu-os-cloud/ubuntu-2204-lts.
+    AWS key_name maps to metadata ssh-keys in GCP.
+    AWS user_data maps to metadata_startup_script.
+    AWS security groups map to network tags + firewall rules.
+    AWS EIP maps to google_compute_address with a static external IP.
+    AWS placement groups map to resource policies in GCP.
+base_confidence: 0.80
+tags:
+  - ec2
+  - compute-engine
+  - terraform
+  - compute
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_instance" "web" {
+        ami                    = "ami-0c55b159cbfafe1f0"
+        instance_type          = "t3.medium"
+        key_name               = "my-keypair"
+        subnet_id              = aws_subnet.public.id
+        vpc_security_group_ids = [aws_security_group.web.id]
+
+        user_data = <<-EOF
+          #!/bin/bash
+          apt-get update
+          apt-get install -y nginx
+        EOF
+
+        root_block_device {
+          volume_size = 30
+          volume_type = "gp3"
+        }
+
+        tags = {
+          Name        = "web-server"
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_compute_instance" "web" {
+        name         = "web-server"
+        project      = var.project_id
+        zone         = "us-central1-a"
+        machine_type = "e2-medium"
+
+        boot_disk {
+          initialize_params {
+            image = "debian-cloud/debian-12"
+            size  = 30
+            type  = "pd-ssd"
+          }
+        }
+
+        network_interface {
+          network    = google_compute_network.main.id
+          subnetwork = google_compute_subnetwork.public.id
+
+          access_config {
+            # Ephemeral public IP
+          }
+        }
+
+        metadata_startup_script = <<-EOT
+          #!/bin/bash
+          apt-get update
+          apt-get install -y nginx
+        EOT
+
+        tags = ["web"]
+
+        labels = {
+          environment = "production"
+        }
+      }

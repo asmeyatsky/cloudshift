@@ -1,0 +1,242 @@
+id: aws-cloudwatch-dashboard-to-gcp-monitoring-dashboard-tf
+name: "AWS CloudWatch Dashboard to GCP Monitoring Dashboard (Terraform)"
+description: >
+  Transforms aws_cloudwatch_dashboard to google_monitoring_dashboard.
+  CloudWatch dashboards with JSON widget definitions map to GCP Monitoring
+  dashboards with mosaic layout and widget configurations. Both use JSON-like
+  structures but with different schemas.
+source_provider: aws
+target_provider: gcp
+source_service: cloudwatch
+target_service: cloud-monitoring
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_cloudwatch_dashboard"
+  text_patterns:
+    - "cloudwatch_dashboard"
+    - "dashboard_body"
+    - "widgets"
+    - "metrics"
+transform:
+  replacement_template: |
+    resource "google_monitoring_dashboard" "{{resource_name}}" {
+      dashboard_json = jsonencode({
+        displayName = "{{dashboard_name}}"
+        mosaicLayout = {
+          columns = 12
+          tiles = [
+            {
+              xPos   = 0
+              yPos   = 0
+              width  = 6
+              height = 4
+              widget = {
+                title = "{{widget_title}}"
+                xyChart = {
+                  dataSets = [
+                    {
+                      timeSeriesQuery = {
+                        timeSeriesFilter = {
+                          filter = "{{metric_filter}}"
+                          aggregation = {
+                            alignmentPeriod  = "60s"
+                            perSeriesAligner = "ALIGN_MEAN"
+                          }
+                        }
+                      }
+                      plotType = "LINE"
+                    }
+                  ]
+                  timeshiftDuration = "0s"
+                  yAxis = {
+                    scale = "LINEAR"
+                  }
+                }
+              }
+            },
+            {
+              xPos   = 6
+              yPos   = 0
+              width  = 6
+              height = 4
+              widget = {
+                title = "{{widget_title_2}}"
+                scorecard = {
+                  timeSeriesQuery = {
+                    timeSeriesFilter = {
+                      filter = "{{metric_filter_2}}"
+                      aggregation = {
+                        alignmentPeriod    = "60s"
+                        perSeriesAligner   = "ALIGN_MEAN"
+                        crossSeriesReducer = "REDUCE_SUM"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      })
+
+      project = var.project_id
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    CloudWatch Dashboard to Monitoring Dashboard mapping:
+      - aws_cloudwatch_dashboard maps to google_monitoring_dashboard.
+      - CloudWatch dashboard_body (JSON) maps to dashboard_json.
+      - CloudWatch widget types mapping:
+        - "metric" widget -> xyChart widget (line/bar/area charts)
+        - "text" widget -> text widget with markdown
+        - "log" widget -> no direct equivalent (use Logs Explorer link)
+        - "alarm" widget -> scorecard or alertChart widget
+      - CloudWatch metric namespace/name maps to GCP metric type filter string.
+        Example: AWS/EC2 CPUUtilization -> compute.googleapis.com/instance/cpu/utilization
+      - CloudWatch dashboard grid (24 columns) maps to mosaicLayout (12 columns).
+        Widget positions need to be scaled (divide x by 2, width by 2).
+      - CloudWatch period maps to alignmentPeriod.
+      - CloudWatch stat (Average, Sum, etc.) maps to perSeriesAligner/crossSeriesReducer.
+      - CloudWatch annotations have no direct equivalent in GCP dashboards.
+      - CloudWatch dashboard variables map to dashboard template variables in GCP.
+base_confidence: 0.70
+tags:
+  - cloudwatch
+  - monitoring
+  - dashboard
+  - terraform
+  - monitoring
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_cloudwatch_dashboard" "main" {
+        dashboard_name = "production-overview"
+
+        dashboard_body = jsonencode({
+          widgets = [
+            {
+              type   = "metric"
+              x      = 0
+              y      = 0
+              width  = 12
+              height = 6
+              properties = {
+                metrics = [
+                  ["AWS/EC2", "CPUUtilization", "InstanceId", "i-1234567890"]
+                ]
+                period = 300
+                stat   = "Average"
+                region = "us-east-1"
+                title  = "EC2 CPU Utilization"
+              }
+            },
+            {
+              type   = "metric"
+              x      = 12
+              y      = 0
+              width  = 12
+              height = 6
+              properties = {
+                metrics = [
+                  ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "production-db"]
+                ]
+                period = 300
+                stat   = "Sum"
+                region = "us-east-1"
+                title  = "RDS Connections"
+              }
+            },
+            {
+              type   = "text"
+              x      = 0
+              y      = 6
+              width  = 24
+              height = 2
+              properties = {
+                markdown = "## Production Environment Status"
+              }
+            }
+          ]
+        })
+      }
+    output: |
+      resource "google_monitoring_dashboard" "main" {
+        dashboard_json = jsonencode({
+          displayName = "production-overview"
+          mosaicLayout = {
+            columns = 12
+            tiles = [
+              {
+                xPos   = 0
+                yPos   = 0
+                width  = 6
+                height = 4
+                widget = {
+                  title = "Compute Engine CPU Utilization"
+                  xyChart = {
+                    dataSets = [
+                      {
+                        timeSeriesQuery = {
+                          timeSeriesFilter = {
+                            filter = "metric.type = \"compute.googleapis.com/instance/cpu/utilization\" AND resource.labels.instance_id = \"1234567890\""
+                            aggregation = {
+                              alignmentPeriod  = "300s"
+                              perSeriesAligner = "ALIGN_MEAN"
+                            }
+                          }
+                        }
+                        plotType = "LINE"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                xPos   = 6
+                yPos   = 0
+                width  = 6
+                height = 4
+                widget = {
+                  title = "Cloud SQL Connections"
+                  xyChart = {
+                    dataSets = [
+                      {
+                        timeSeriesQuery = {
+                          timeSeriesFilter = {
+                            filter = "metric.type = \"cloudsql.googleapis.com/database/network/connections\" AND resource.labels.database_id = \"production-db\""
+                            aggregation = {
+                              alignmentPeriod    = "300s"
+                              perSeriesAligner   = "ALIGN_SUM"
+                              crossSeriesReducer = "REDUCE_SUM"
+                            }
+                          }
+                        }
+                        plotType = "LINE"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                xPos   = 0
+                yPos   = 4
+                width  = 12
+                height = 2
+                widget = {
+                  title = ""
+                  text = {
+                    content = "## Production Environment Status"
+                    format  = "MARKDOWN"
+                  }
+                }
+              }
+            ]
+          }
+        })
+
+        project = var.project_id
+      }

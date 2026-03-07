@@ -1,0 +1,102 @@
+id: iam-role-cfn-to-service-account-tf
+name: "IAM Role CloudFormation to Service Account (Terraform)"
+description: >
+  Transforms an AWS::IAM::Role CloudFormation resource definition to
+  google_service_account and google_project_iam_member Terraform resources.
+  AWS IAM roles with assume-role policies map to GCP service accounts with
+  IAM bindings.
+source_provider: aws
+target_provider: gcp
+source_service: iam
+target_service: iam
+language: cloudformation
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "AWS::IAM::Role"
+  text_patterns:
+    - "Type: AWS::IAM::Role"
+    - "AssumeRolePolicyDocument:"
+    - "Policies:"
+    - "ManagedPolicyArns:"
+    - "RoleName:"
+transform:
+  replacement_template: |
+    resource "google_service_account" "{{resource_name}}" {
+      account_id   = "{{account_id}}"
+      display_name = "{{display_name}}"
+      project      = var.project_id
+    }
+
+    resource "google_project_iam_member" "{{resource_name}}_{{role_suffix}}" {
+      project = var.project_id
+      role    = "{{gcp_role}}"
+      member  = "serviceAccount:${google_service_account.{{resource_name}}.email}"
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    AWS IAM and GCP IAM have fundamentally different models. AWS uses
+    identity-based policies attached to roles, while GCP uses resource-based
+    IAM bindings. AssumeRolePolicyDocument maps to service account
+    impersonation or workload identity. AWS managed policies map to GCP
+    predefined roles. Inline policies must be decomposed into individual
+    google_project_iam_member resources or custom roles. Conditions in
+    AWS policies map to IAM Conditions in GCP. CloudFormation intrinsic
+    functions must be converted to Terraform expressions.
+base_confidence: 0.68
+tags:
+  - iam
+  - service-account
+  - cloudformation
+  - terraform
+  - security
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      Resources:
+        LambdaExecutionRole:
+          Type: AWS::IAM::Role
+          Properties:
+            RoleName: !Sub "${AWS::StackName}-lambda-role"
+            AssumeRolePolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Principal:
+                    Service: lambda.amazonaws.com
+                  Action: "sts:AssumeRole"
+            ManagedPolicyArns:
+              - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+            Policies:
+              - PolicyName: DynamoDBAccess
+                PolicyDocument:
+                  Version: "2012-10-17"
+                  Statement:
+                    - Effect: Allow
+                      Action:
+                        - "dynamodb:GetItem"
+                        - "dynamodb:PutItem"
+                        - "dynamodb:Query"
+                      Resource: !GetAtt OrdersTable.Arn
+    output: |
+      resource "google_service_account" "lambda_execution_role" {
+        account_id   = "${var.project_name}-lambda-role"
+        display_name = "Lambda Execution Role"
+        project      = var.project_id
+      }
+
+      # Equivalent of AWSLambdaBasicExecutionRole
+      resource "google_project_iam_member" "lambda_execution_role_logging" {
+        project = var.project_id
+        role    = "roles/logging.logWriter"
+        member  = "serviceAccount:${google_service_account.lambda_execution_role.email}"
+      }
+
+      # Equivalent of DynamoDB access policy
+      resource "google_project_iam_member" "lambda_execution_role_firestore" {
+        project = var.project_id
+        role    = "roles/datastore.user"
+        member  = "serviceAccount:${google_service_account.lambda_execution_role.email}"
+      }

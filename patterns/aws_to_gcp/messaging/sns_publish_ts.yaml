@@ -1,0 +1,90 @@
+id: aws-gcp-sns-publish-ts
+name: "SNS Publish to PubSub publishMessage"
+description: >
+  Transforms AWS SNS PublishCommand calls to Google Cloud Pub/Sub
+  topic().publishMessage() calls in TypeScript. Maps SNS topic ARN
+  and message parameters to Pub/Sub topic name and message data.
+source_provider: aws
+target_provider: gcp
+source_service: sns
+target_service: cloud-pubsub
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { PublishCommand } from '@aws-sdk/client-sns'"
+  client_names:
+    - "new PublishCommand"
+  text_patterns:
+    - "PublishCommand"
+    - "TopicArn"
+    - "Message"
+transform:
+  replacement_template: |
+    const pubsub = new PubSub();
+    const messageId = await pubsub.topic(topicName).publishMessage({
+      data: Buffer.from(message),
+      attributes: messageAttributes,
+    });
+  import_additions:
+    - "import { PubSub } from '@google-cloud/pubsub'"
+  import_removals:
+    - "import { PublishCommand } from '@aws-sdk/client-sns'"
+  notes: >
+    SNS PublishCommand uses TopicArn, Message, Subject, and MessageAttributes.
+    Pub/Sub publishMessage uses topic name, data as Buffer, and string attributes.
+    SNS supports message filtering on subscriptions; Pub/Sub uses subscription
+    filters. SNS Subject has no direct Pub/Sub equivalent but can be passed as
+    an attribute. SNS supports SMS and email protocols; Pub/Sub is purely
+    message-based.
+base_confidence: 0.85
+tags:
+  - messaging
+  - sns
+  - pubsub
+  - publish
+  - typescript
+examples:
+  - input: |
+      import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
+
+      const sns = new SNSClient({ region: 'us-east-1' });
+
+      async function publishNotification(
+        topicArn: string,
+        subject: string,
+        message: object
+      ): Promise<string> {
+        const command = new PublishCommand({
+          TopicArn: topicArn,
+          Subject: subject,
+          Message: JSON.stringify(message),
+          MessageAttributes: {
+            eventType: {
+              DataType: 'String',
+              StringValue: 'notification',
+            },
+          },
+        });
+        const response = await sns.send(command);
+        return response.MessageId!;
+      }
+    output: |
+      import { PubSub } from '@google-cloud/pubsub';
+
+      const pubsub = new PubSub();
+
+      async function publishNotification(
+        topicName: string,
+        subject: string,
+        message: object
+      ): Promise<string> {
+        const messageId = await pubsub.topic(topicName).publishMessage({
+          data: Buffer.from(JSON.stringify(message)),
+          attributes: {
+            subject: subject,
+            eventType: 'notification',
+          },
+        });
+        return messageId;
+      }

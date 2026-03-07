@@ -1,0 +1,206 @@
+id: azure-appgw-to-gcp-lb-tf
+name: "Azure Application Gateway to GCP HTTP(S) Load Balancer (Terraform)"
+description: >
+  Transforms azurerm_application_gateway to GCP HTTP(S) Load Balancer
+  components including google_compute_url_map, google_compute_backend_service,
+  google_compute_target_https_proxy, and google_compute_global_forwarding_rule.
+source_provider: azure
+target_provider: gcp
+source_service: application-gateway
+target_service: cloud-load-balancing
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_application_gateway"
+  text_patterns:
+    - "gateway_ip_configuration"
+    - "frontend_port"
+    - "frontend_ip_configuration"
+    - "backend_address_pool"
+    - "backend_http_settings"
+    - "http_listener"
+    - "request_routing_rule"
+    - "sku"
+    - "waf_configuration"
+transform:
+  replacement_template: |
+    resource "google_compute_global_address" "{{resource_name}}" {
+      name    = "{{lb_name}}-ip"
+      project = var.project_id
+    }
+
+    resource "google_compute_health_check" "{{resource_name}}" {
+      name    = "{{lb_name}}-health-check"
+      project = var.project_id
+
+      http_health_check {
+        port         = {{health_port}}
+        request_path = "{{health_path}}"
+      }
+    }
+
+    resource "google_compute_backend_service" "{{resource_name}}" {
+      name          = "{{lb_name}}-backend"
+      project       = var.project_id
+      health_checks = [google_compute_health_check.{{resource_name}}.id]
+      protocol      = "HTTP"
+
+      backend {
+        group = {{instance_group}}
+      }
+    }
+
+    resource "google_compute_url_map" "{{resource_name}}" {
+      name            = "{{lb_name}}-url-map"
+      project         = var.project_id
+      default_service = google_compute_backend_service.{{resource_name}}.id
+    }
+
+    resource "google_compute_target_http_proxy" "{{resource_name}}" {
+      name    = "{{lb_name}}-proxy"
+      project = var.project_id
+      url_map = google_compute_url_map.{{resource_name}}.id
+    }
+
+    resource "google_compute_global_forwarding_rule" "{{resource_name}}" {
+      name       = "{{lb_name}}-forwarding-rule"
+      project    = var.project_id
+      target     = google_compute_target_http_proxy.{{resource_name}}.id
+      port_range = "80"
+      ip_address = google_compute_global_address.{{resource_name}}.address
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure Application Gateway is a single resource; GCP HTTP(S) LB
+    requires multiple resources (URL map, backend service, health check,
+    target proxy, forwarding rule, global address).
+    Azure backend_address_pool maps to GCP backend_service + instance groups.
+    Azure backend_http_settings maps to GCP backend_service protocol settings.
+    Azure http_listener maps to GCP target_http(s)_proxy + forwarding_rule.
+    Azure request_routing_rule maps to GCP url_map path/host rules.
+    Azure WAF (waf_configuration) maps to Google Cloud Armor security policy.
+    Azure probe maps to GCP health_check.
+    Azure SSL certificates map to google_compute_managed_ssl_certificate
+    or google_compute_ssl_certificate.
+    Azure redirect_configuration maps to GCP url_map path_rule with
+    url_redirect block.
+    Azure Application Gateway v2 auto-scaling maps to GCP auto-scaling
+    backend services.
+base_confidence: 0.68
+tags:
+  - application-gateway
+  - load-balancer
+  - terraform
+  - networking
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "azurerm_application_gateway" "main" {
+        name                = "myapp-appgw"
+        resource_group_name = azurerm_resource_group.main.name
+        location            = azurerm_resource_group.main.location
+
+        sku {
+          name     = "Standard_v2"
+          tier     = "Standard_v2"
+          capacity = 2
+        }
+
+        gateway_ip_configuration {
+          name      = "gateway-ip-config"
+          subnet_id = azurerm_subnet.appgw.id
+        }
+
+        frontend_port {
+          name = "http-port"
+          port = 80
+        }
+
+        frontend_ip_configuration {
+          name                 = "frontend-ip"
+          public_ip_address_id = azurerm_public_ip.appgw.id
+        }
+
+        backend_address_pool {
+          name = "app-backend-pool"
+        }
+
+        backend_http_settings {
+          name                  = "http-settings"
+          cookie_based_affinity = "Disabled"
+          port                  = 80
+          protocol              = "Http"
+          request_timeout       = 30
+        }
+
+        http_listener {
+          name                           = "http-listener"
+          frontend_ip_configuration_name = "frontend-ip"
+          frontend_port_name             = "http-port"
+          protocol                       = "Http"
+        }
+
+        request_routing_rule {
+          name                       = "routing-rule"
+          priority                   = 1
+          rule_type                  = "Basic"
+          http_listener_name         = "http-listener"
+          backend_address_pool_name  = "app-backend-pool"
+          backend_http_settings_name = "http-settings"
+        }
+      }
+    output: |
+      resource "google_compute_global_address" "main" {
+        name    = "myapp-lb-ip"
+        project = var.project_id
+      }
+
+      resource "google_compute_health_check" "main" {
+        name    = "myapp-health-check"
+        project = var.project_id
+
+        http_health_check {
+          port         = 80
+          request_path = "/"
+        }
+
+        check_interval_sec  = 10
+        timeout_sec         = 5
+        healthy_threshold   = 2
+        unhealthy_threshold = 3
+      }
+
+      resource "google_compute_backend_service" "main" {
+        name          = "myapp-backend"
+        project       = var.project_id
+        health_checks = [google_compute_health_check.main.id]
+        protocol      = "HTTP"
+        timeout_sec   = 30
+
+        backend {
+          group = google_compute_instance_group.app.id
+        }
+      }
+
+      resource "google_compute_url_map" "main" {
+        name            = "myapp-url-map"
+        project         = var.project_id
+        default_service = google_compute_backend_service.main.id
+      }
+
+      resource "google_compute_target_http_proxy" "main" {
+        name    = "myapp-http-proxy"
+        project = var.project_id
+        url_map = google_compute_url_map.main.id
+      }
+
+      resource "google_compute_global_forwarding_rule" "main" {
+        name       = "myapp-forwarding-rule"
+        project    = var.project_id
+        target     = google_compute_target_http_proxy.main.id
+        port_range = "80"
+        ip_address = google_compute_global_address.main.address
+      }

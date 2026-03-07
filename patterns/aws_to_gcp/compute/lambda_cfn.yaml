@@ -1,0 +1,131 @@
+id: lambda-cfn-to-cloud-functions-tf
+name: "Lambda CloudFormation to Cloud Functions (Terraform)"
+description: >
+  Transforms an AWS::Lambda::Function CloudFormation resource definition to a
+  google_cloudfunctions2_function Terraform resource. Maps Lambda runtime,
+  handler, memory, and timeout settings to their Cloud Functions equivalents.
+source_provider: aws
+target_provider: gcp
+source_service: lambda
+target_service: cloud-functions
+language: cloudformation
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "AWS::Lambda::Function"
+  text_patterns:
+    - "Type: AWS::Lambda::Function"
+    - "Handler:"
+    - "Runtime:"
+    - "CodeUri:"
+    - "FunctionName:"
+transform:
+  replacement_template: |
+    resource "google_cloudfunctions2_function" "{{resource_name}}" {
+      name     = "{{function_name}}"
+      location = "{{location}}"
+      project  = var.project_id
+
+      build_config {
+        runtime     = "{{runtime}}"
+        entry_point = "{{handler}}"
+
+        source {
+          storage_source {
+            bucket = "{{source_bucket}}"
+            object = "{{source_object}}"
+          }
+        }
+      }
+
+      service_config {
+        max_instance_count    = {{max_instances}}
+        available_memory      = "{{memory_mb}}M"
+        timeout_seconds       = {{timeout}}
+        service_account_email = google_service_account.{{sa_name}}.email
+
+        environment_variables = {
+          {{environment_variables}}
+        }
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    This pattern converts CloudFormation YAML to Terraform HCL. AWS Lambda
+    runtimes map to Cloud Functions runtimes (e.g., python3.11 stays the same,
+    nodejs18.x becomes nodejs18). Lambda layers have no direct equivalent;
+    include dependencies in the deployment package. CloudFormation intrinsic
+    functions (!Ref, !Sub) must be converted to Terraform expressions.
+    Lambda@Edge has no direct equivalent; consider Cloud CDN or Cloud Run.
+    VPC configuration requires google_vpc_access_connector resource.
+base_confidence: 0.75
+tags:
+  - lambda
+  - cloud-functions
+  - cloudformation
+  - terraform
+  - compute
+  - serverless
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      Resources:
+        ProcessorFunction:
+          Type: AWS::Lambda::Function
+          Properties:
+            FunctionName: !Sub "${AWS::StackName}-processor"
+            Runtime: python3.11
+            Handler: index.handler
+            MemorySize: 512
+            Timeout: 60
+            Code:
+              S3Bucket: !Ref DeploymentBucket
+              S3Key: lambda/processor.zip
+            Environment:
+              Variables:
+                TABLE_NAME: !Ref DynamoTable
+                STAGE: !Ref Environment
+            Role: !GetAtt LambdaExecutionRole.Arn
+            Tags:
+              - Key: Environment
+                Value: !Ref Environment
+    output: |
+      resource "google_cloudfunctions2_function" "processor_function" {
+        name     = "${var.project_name}-processor"
+        location = "us-central1"
+        project  = var.project_id
+
+        build_config {
+          runtime     = "python311"
+          entry_point = "handler"
+
+          source {
+            storage_source {
+              bucket = google_storage_bucket.deployment_bucket.name
+              object = "lambda/processor.zip"
+            }
+          }
+        }
+
+        service_config {
+          max_instance_count    = 100
+          available_memory      = "512M"
+          timeout_seconds       = 60
+          service_account_email = google_service_account.lambda_execution_role.email
+
+          environment_variables = {
+            TABLE_NAME = google_firestore_database.dynamo_table.name
+            STAGE      = var.environment
+          }
+        }
+
+        labels = {
+          environment = var.environment
+        }
+      }

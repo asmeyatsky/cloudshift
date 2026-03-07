@@ -1,0 +1,239 @@
+id: aws-rds-aurora-to-gcp-cloud-sql-ha-tf
+name: "AWS RDS Aurora to GCP Cloud SQL with HA (Terraform)"
+description: >
+  Transforms aws_rds_cluster (Aurora) and aws_rds_cluster_instance to
+  google_sql_database_instance configured with REGIONAL availability for
+  high availability. Aurora's multi-reader architecture maps to Cloud SQL
+  read replicas.
+source_provider: aws
+target_provider: gcp
+source_service: rds-aurora
+target_service: cloud-sql
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_rds_cluster"
+    - "aws_rds_cluster_instance"
+    - "aws_rds_cluster_parameter_group"
+    - "aws_rds_cluster_endpoint"
+  text_patterns:
+    - "rds_cluster"
+    - "aurora"
+    - "cluster_identifier"
+    - "engine_mode"
+    - "availability_zones"
+    - "preferred_backup_window"
+transform:
+  replacement_template: |
+    resource "google_sql_database_instance" "{{resource_name}}" {
+      name             = "{{instance_name}}"
+      database_version = "{{database_version}}"
+      region           = "{{region}}"
+      project          = var.project_id
+
+      settings {
+        tier              = "{{tier}}"
+        availability_type = "REGIONAL"
+        disk_size         = {{disk_size}}
+        disk_type         = "PD_SSD"
+        disk_autoresize   = true
+
+        ip_configuration {
+          ipv4_enabled    = false
+          private_network = "{{vpc_network}}"
+        }
+
+        backup_configuration {
+          enabled                        = true
+          binary_log_enabled             = {{binary_log}}
+          point_in_time_recovery_enabled = true
+          start_time                     = "{{backup_window}}"
+          transaction_log_retention_days = 7
+
+          backup_retention_settings {
+            retained_backups = {{backup_retention}}
+            retention_unit   = "COUNT"
+          }
+        }
+
+        database_flags {
+          name  = "{{flag_name}}"
+          value = "{{flag_value}}"
+        }
+
+        maintenance_window {
+          day          = 7
+          hour         = 3
+          update_track = "stable"
+        }
+      }
+
+      deletion_protection = {{deletion_protection}}
+    }
+
+    resource "google_sql_database_instance" "{{read_replica_name}}" {
+      name                 = "{{replica_instance_name}}"
+      database_version     = "{{database_version}}"
+      region               = "{{region}}"
+      project              = var.project_id
+      master_instance_name = google_sql_database_instance.{{resource_name}}.name
+
+      replica_configuration {
+        failover_target = false
+      }
+
+      settings {
+        tier            = "{{replica_tier}}"
+        disk_size       = {{disk_size}}
+        disk_type       = "PD_SSD"
+        disk_autoresize = true
+
+        ip_configuration {
+          ipv4_enabled    = false
+          private_network = "{{vpc_network}}"
+        }
+      }
+    }
+
+    resource "google_sql_database" "{{db_name}}" {
+      name     = "{{database_name}}"
+      instance = google_sql_database_instance.{{resource_name}}.name
+    }
+
+    resource "google_sql_user" "{{user_name}}" {
+      name     = "{{username}}"
+      instance = google_sql_database_instance.{{resource_name}}.name
+      password = var.db_password
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Aurora to Cloud SQL HA mapping:
+      - Aurora cluster maps to Cloud SQL instance with availability_type=REGIONAL.
+      - Aurora reader instances map to Cloud SQL read replicas.
+      - Aurora Serverless v2 has no direct Cloud SQL equivalent; consider AlloyDB
+        or Cloud Run + Cloud SQL with connection pooling.
+      - Aurora engine aurora-mysql maps to MYSQL_8_0, aurora-postgresql maps to POSTGRES_15.
+      - Aurora auto-scaling readers map to additional read replica instances.
+      - Aurora Global Database maps to Cloud SQL cross-region read replicas.
+      - Aurora cluster endpoint maps to Cloud SQL primary IP.
+      - Aurora reader endpoint maps to read replica IPs (no built-in load balancing).
+      - Aurora Performance Insights maps to Cloud SQL Query Insights.
+      - Aurora backup_retention_period maps to backup_retention_settings.
+      - For Aurora Serverless workloads, consider AlloyDB (google_alloydb_cluster).
+base_confidence: 0.72
+tags:
+  - rds
+  - aurora
+  - cloud-sql
+  - terraform
+  - database
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_rds_cluster" "main" {
+        cluster_identifier      = "production-aurora"
+        engine                  = "aurora-postgresql"
+        engine_version          = "15.4"
+        database_name           = "myapp"
+        master_username         = "admin"
+        master_password         = var.db_password
+        availability_zones      = ["us-east-1a", "us-east-1b", "us-east-1c"]
+        backup_retention_period = 14
+        preferred_backup_window = "03:00-04:00"
+        deletion_protection     = true
+
+        db_subnet_group_name   = aws_db_subnet_group.main.name
+        vpc_security_group_ids = [aws_security_group.aurora.id]
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "aws_rds_cluster_instance" "writer" {
+        identifier         = "production-aurora-writer"
+        cluster_identifier = aws_rds_cluster.main.id
+        instance_class     = "db.r6g.large"
+        engine             = aws_rds_cluster.main.engine
+        engine_version     = aws_rds_cluster.main.engine_version
+      }
+
+      resource "aws_rds_cluster_instance" "reader" {
+        identifier         = "production-aurora-reader"
+        cluster_identifier = aws_rds_cluster.main.id
+        instance_class     = "db.r6g.large"
+        engine             = aws_rds_cluster.main.engine
+        engine_version     = aws_rds_cluster.main.engine_version
+      }
+    output: |
+      resource "google_sql_database_instance" "main" {
+        name             = "production-aurora"
+        database_version = "POSTGRES_15"
+        region           = "us-central1"
+        project          = var.project_id
+
+        settings {
+          tier              = "db-custom-2-13312"
+          availability_type = "REGIONAL"
+          disk_size         = 100
+          disk_type         = "PD_SSD"
+          disk_autoresize   = true
+
+          ip_configuration {
+            ipv4_enabled    = false
+            private_network = google_compute_network.main.id
+          }
+
+          backup_configuration {
+            enabled                        = true
+            point_in_time_recovery_enabled = true
+            start_time                     = "03:00"
+            transaction_log_retention_days = 7
+
+            backup_retention_settings {
+              retained_backups = 14
+              retention_unit   = "COUNT"
+            }
+          }
+        }
+
+        deletion_protection = true
+      }
+
+      resource "google_sql_database_instance" "reader" {
+        name                 = "production-aurora-reader"
+        database_version     = "POSTGRES_15"
+        region               = "us-central1"
+        project              = var.project_id
+        master_instance_name = google_sql_database_instance.main.name
+
+        replica_configuration {
+          failover_target = false
+        }
+
+        settings {
+          tier            = "db-custom-2-13312"
+          disk_size       = 100
+          disk_type       = "PD_SSD"
+          disk_autoresize = true
+
+          ip_configuration {
+            ipv4_enabled    = false
+            private_network = google_compute_network.main.id
+          }
+        }
+      }
+
+      resource "google_sql_database" "myapp" {
+        name     = "myapp"
+        instance = google_sql_database_instance.main.name
+      }
+
+      resource "google_sql_user" "admin" {
+        name     = "admin"
+        instance = google_sql_database_instance.main.name
+        password = var.db_password
+      }

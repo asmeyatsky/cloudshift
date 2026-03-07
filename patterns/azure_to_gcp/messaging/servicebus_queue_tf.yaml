@@ -1,0 +1,141 @@
+id: azure-servicebus-queue-to-pubsub-tf
+name: "Azure Service Bus Queue to Pub/Sub Topic + Subscription (Terraform)"
+description: >
+  Transforms azurerm_servicebus_queue to google_pubsub_topic and
+  google_pubsub_subscription. Maps Service Bus queue properties like
+  TTL, dead-lettering, and duplicate detection to Pub/Sub equivalents.
+source_provider: azure
+target_provider: gcp
+source_service: service-bus
+target_service: pubsub
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_servicebus_namespace"
+    - "azurerm_servicebus_queue"
+  text_patterns:
+    - "servicebus_queue"
+    - "default_message_ttl"
+    - "max_delivery_count"
+    - "lock_duration"
+    - "dead_lettering_on_message_expiration"
+    - "requires_duplicate_detection"
+    - "namespace_id"
+transform:
+  replacement_template: |
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_retention_duration = "{{retention_duration}}"
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    resource "google_pubsub_subscription" "{{subscription_name}}" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{resource_name}}.id
+      project = var.project_id
+
+      ack_deadline_seconds       = {{ack_deadline}}
+      message_retention_duration = "{{msg_retention}}"
+
+      dead_letter_policy {
+        dead_letter_topic     = google_pubsub_topic.{{dead_letter_topic}}.id
+        max_delivery_attempts = {{max_delivery_count}}
+      }
+
+      expiration_policy {
+        ttl = ""
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure Service Bus Queue is a point-to-point messaging resource;
+    Pub/Sub uses topic + subscription for equivalent behavior.
+    Azure default_message_ttl maps to Pub/Sub message_retention_duration.
+    Azure max_delivery_count maps to Pub/Sub dead_letter_policy.max_delivery_attempts.
+    Azure lock_duration maps to Pub/Sub ack_deadline_seconds.
+    Azure dead_lettering_on_message_expiration maps to Pub/Sub dead_letter_policy.
+    Azure requires_duplicate_detection has no direct Pub/Sub equivalent
+    (implement idempotency at the application level).
+    Azure requires_session (ordered processing) maps to Pub/Sub
+    enable_message_ordering with ordering_key.
+    Azure servicebus_namespace is a container; no Pub/Sub equivalent needed.
+    Azure auto_delete_on_idle maps to Pub/Sub expiration_policy.
+base_confidence: 0.78
+tags:
+  - service-bus
+  - pubsub
+  - terraform
+  - messaging
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_servicebus_namespace" "main" {
+        name                = "myapp-servicebus"
+        location            = azurerm_resource_group.main.location
+        resource_group_name = azurerm_resource_group.main.name
+        sku                 = "Standard"
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "azurerm_servicebus_queue" "orders" {
+        name         = "orders"
+        namespace_id = azurerm_servicebus_namespace.main.id
+
+        default_message_ttl                  = "P14D"
+        max_delivery_count                   = 10
+        lock_duration                        = "PT1M"
+        dead_lettering_on_message_expiration = true
+        requires_duplicate_detection         = true
+        duplicate_detection_history_time_window = "PT10M"
+      }
+    output: |
+      resource "google_pubsub_topic" "orders" {
+        name    = "orders"
+        project = var.project_id
+
+        message_retention_duration = "1209600s"
+
+        labels = {
+          environment = "production"
+        }
+      }
+
+      resource "google_pubsub_topic" "orders_dead_letter" {
+        name    = "orders-dead-letter"
+        project = var.project_id
+      }
+
+      resource "google_pubsub_subscription" "orders" {
+        name    = "orders-sub"
+        topic   = google_pubsub_topic.orders.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "1209600s"
+
+        dead_letter_policy {
+          dead_letter_topic     = google_pubsub_topic.orders_dead_letter.id
+          max_delivery_attempts = 10
+        }
+
+        expiration_policy {
+          ttl = ""
+        }
+      }
+
+      resource "google_pubsub_subscription" "orders_dead_letter" {
+        name    = "orders-dead-letter-sub"
+        topic   = google_pubsub_topic.orders_dead_letter.id
+        project = var.project_id
+      }

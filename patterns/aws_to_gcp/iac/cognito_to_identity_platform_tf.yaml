@@ -1,0 +1,172 @@
+id: aws-cognito-to-gcp-identity-platform-tf
+name: "AWS Cognito to GCP Identity Platform (Terraform)"
+description: >
+  Transforms aws_cognito_user_pool and related resources to
+  google_identity_platform_config and associated resources. Cognito User
+  Pools provide authentication and user management, which maps to
+  Google Identity Platform (Firebase Auth) in GCP.
+source_provider: aws
+target_provider: gcp
+source_service: cognito
+target_service: identity-platform
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_cognito_user_pool"
+    - "aws_cognito_user_pool_client"
+    - "aws_cognito_user_pool_domain"
+    - "aws_cognito_identity_provider"
+  text_patterns:
+    - "cognito_user_pool"
+    - "password_policy"
+    - "auto_verified_attributes"
+    - "username_attributes"
+    - "schema"
+    - "mfa_configuration"
+transform:
+  replacement_template: |
+    resource "google_identity_platform_config" "{{resource_name}}" {
+      project = var.project_id
+
+      sign_in {
+        allow_duplicate_emails = false
+
+        email {
+          enabled           = true
+          password_required = true
+        }
+
+        phone_number {
+          enabled = {{phone_enabled}}
+        }
+      }
+
+      mfa {
+        state = "{{mfa_state}}"
+        provider_configs {
+          state = "ENABLED"
+          totp_provider_config {
+            adjacent_intervals = 1
+          }
+        }
+      }
+
+      authorized_domains = ["{{authorized_domain}}"]
+    }
+
+    resource "google_identity_platform_default_supported_idp_config" "{{idp_name}}" {
+      project      = var.project_id
+      enabled      = true
+      idp_id       = "{{idp_id}}"
+      client_id    = "{{oauth_client_id}}"
+      client_secret = "{{oauth_client_secret}}"
+    }
+
+    resource "google_identity_platform_project_default_config" "{{resource_name}}" {
+      project = var.project_id
+
+      sign_in {
+        allow_duplicate_emails = false
+
+        email {
+          enabled           = true
+          password_required = true
+        }
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Cognito to Identity Platform mapping:
+      - aws_cognito_user_pool maps to google_identity_platform_config.
+      - Cognito password_policy has no direct Terraform equivalent in Identity Platform
+        (configured via Firebase console or Admin SDK).
+      - Cognito username_attributes (email/phone) map to sign_in email/phone settings.
+      - Cognito mfa_configuration maps to mfa block (OFF -> DISABLED,
+        OPTIONAL -> OPTIONAL, ON -> MANDATORY).
+      - Cognito identity_provider (Google, Facebook) maps to
+        google_identity_platform_default_supported_idp_config.
+      - Cognito user_pool_client maps to OAuth client configuration in Identity Platform.
+      - Cognito custom attributes (schema) have no direct mapping; use custom claims.
+      - Cognito triggers (Lambda) map to Firebase Auth blocking functions.
+      - Cognito hosted UI maps to FirebaseUI or custom auth UI.
+      - This is a low-confidence mapping due to significant architectural differences.
+base_confidence: 0.65
+tags:
+  - cognito
+  - identity-platform
+  - authentication
+  - terraform
+  - iac
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_cognito_user_pool" "main" {
+        name = "my-app-users"
+
+        username_attributes      = ["email"]
+        auto_verified_attributes = ["email"]
+
+        password_policy {
+          minimum_length    = 12
+          require_uppercase = true
+          require_lowercase = true
+          require_numbers   = true
+          require_symbols   = true
+        }
+
+        mfa_configuration = "OPTIONAL"
+
+        schema {
+          name                = "email"
+          attribute_data_type = "String"
+          required            = true
+          mutable             = true
+        }
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "aws_cognito_user_pool_client" "web" {
+        name         = "web-client"
+        user_pool_id = aws_cognito_user_pool.main.id
+
+        allowed_oauth_flows          = ["code"]
+        allowed_oauth_scopes         = ["email", "openid", "profile"]
+        callback_urls                = ["https://app.example.com/callback"]
+        supported_identity_providers = ["COGNITO"]
+      }
+    output: |
+      resource "google_identity_platform_config" "main" {
+        project = var.project_id
+
+        sign_in {
+          allow_duplicate_emails = false
+
+          email {
+            enabled           = true
+            password_required = true
+          }
+        }
+
+        mfa {
+          state = "OPTIONAL"
+          provider_configs {
+            state = "ENABLED"
+            totp_provider_config {
+              adjacent_intervals = 1
+            }
+          }
+        }
+
+        authorized_domains = ["app.example.com"]
+      }
+
+      # Note: Cognito password policy (minimum_length, complexity rules) must be
+      # configured via the Firebase Admin SDK or console, not Terraform.
+      # Cognito user pool client OAuth settings map to Identity Platform
+      # OAuth configuration managed outside Terraform.

@@ -1,0 +1,103 @@
+id: azure-managed-identity-to-gcp-service-account-tf
+name: "Azure Managed Identity to GCP Service Account (Terraform)"
+description: >
+  Transforms azurerm_user_assigned_identity and azurerm_role_assignment to
+  google_service_account and google_project_iam_member. Maps Azure managed
+  identities and RBAC role assignments to GCP service accounts and IAM bindings.
+source_provider: azure
+target_provider: gcp
+source_service: managed-identity
+target_service: iam
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_user_assigned_identity"
+    - "azurerm_role_assignment"
+  text_patterns:
+    - "user_assigned_identity"
+    - "role_definition_name"
+    - "principal_id"
+    - "scope"
+    - "identity"
+transform:
+  replacement_template: |
+    resource "google_service_account" "{{resource_name}}" {
+      account_id   = "{{account_id}}"
+      display_name = "{{display_name}}"
+      project      = var.project_id
+    }
+
+    resource "google_project_iam_member" "{{binding_name}}" {
+      project = var.project_id
+      role    = "{{role}}"
+      member  = "serviceAccount:${google_service_account.{{resource_name}}.email}"
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure user-assigned managed identity maps to GCP service account.
+    Azure system-assigned managed identity maps to GCP default service
+    account or a dedicated service account attached to the resource.
+    Azure role_assignment maps to google_project_iam_member.
+    Azure RBAC role names (Reader, Contributor, Owner) map to GCP
+    predefined roles (roles/viewer, roles/editor, roles/owner).
+    Azure scope (subscription, resource group, resource) maps to GCP
+    project-level, folder-level, or resource-level IAM bindings.
+    Azure custom role definitions map to google_project_iam_custom_role.
+    Azure role_definition_name to GCP role mapping (approximate):
+      - Reader -> roles/viewer
+      - Contributor -> roles/editor
+      - Owner -> roles/owner
+      - Storage Blob Data Reader -> roles/storage.objectViewer
+      - Storage Blob Data Contributor -> roles/storage.objectAdmin
+      - Key Vault Secrets User -> roles/secretmanager.secretAccessor
+base_confidence: 0.80
+tags:
+  - managed-identity
+  - service-account
+  - iam
+  - terraform
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_user_assigned_identity" "app" {
+        name                = "myapp-identity"
+        resource_group_name = azurerm_resource_group.main.name
+        location            = azurerm_resource_group.main.location
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "azurerm_role_assignment" "storage_reader" {
+        scope                = azurerm_storage_account.main.id
+        role_definition_name = "Storage Blob Data Reader"
+        principal_id         = azurerm_user_assigned_identity.app.principal_id
+      }
+
+      resource "azurerm_role_assignment" "keyvault_reader" {
+        scope                = azurerm_key_vault.main.id
+        role_definition_name = "Key Vault Secrets User"
+        principal_id         = azurerm_user_assigned_identity.app.principal_id
+      }
+    output: |
+      resource "google_service_account" "app" {
+        account_id   = "myapp-identity"
+        display_name = "myapp-identity"
+        project      = var.project_id
+      }
+
+      resource "google_project_iam_member" "storage_viewer" {
+        project = var.project_id
+        role    = "roles/storage.objectViewer"
+        member  = "serviceAccount:${google_service_account.app.email}"
+      }
+
+      resource "google_project_iam_member" "secret_accessor" {
+        project = var.project_id
+        role    = "roles/secretmanager.secretAccessor"
+        member  = "serviceAccount:${google_service_account.app.email}"
+      }

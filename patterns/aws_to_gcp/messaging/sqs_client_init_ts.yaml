@@ -1,0 +1,62 @@
+id: aws-gcp-sqs-client-init-ts
+name: "SQS Client Init to PubSub Client Init"
+description: >
+  Transforms AWS SQS client initialization (new SQSClient) to Google Cloud
+  Pub/Sub client initialization (new PubSub) in TypeScript. Maps SQS region
+  configuration to PubSub project configuration.
+source_provider: aws
+target_provider: gcp
+source_service: sqs
+target_service: cloud-pubsub
+language: typescript
+construct_type: client_init
+match_pattern:
+  imports:
+    - "import { SQSClient } from '@aws-sdk/client-sqs'"
+  client_names:
+    - "new SQSClient"
+  text_patterns:
+    - "SQSClient"
+    - "@aws-sdk/client-sqs"
+transform:
+  replacement_template: |
+    const pubsub = new PubSub();
+  import_additions:
+    - "import { PubSub } from '@google-cloud/pubsub'"
+  import_removals:
+    - "import { SQSClient } from '@aws-sdk/client-sqs'"
+  notes: >
+    SQSClient requires region configuration and optional credentials. PubSub
+    client uses application default credentials and project ID from the
+    environment or explicit configuration. SQS is a queue-based service while
+    Pub/Sub is topic/subscription-based, so the messaging model differs
+    fundamentally. Queue URLs in SQS map to topic/subscription names in Pub/Sub.
+base_confidence: 0.85
+tags:
+  - messaging
+  - sqs
+  - pubsub
+  - client
+  - init
+  - typescript
+examples:
+  - input: |
+      import { SQSClient } from '@aws-sdk/client-sqs';
+
+      const sqsClient = new SQSClient({
+        region: 'us-east-1',
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+        },
+      });
+
+      export { sqsClient };
+    output: |
+      import { PubSub } from '@google-cloud/pubsub';
+
+      const pubsub = new PubSub({
+        projectId: process.env.GCP_PROJECT,
+      });
+
+      export { pubsub };

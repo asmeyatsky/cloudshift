@@ -1,0 +1,73 @@
+id: azure-cosmosdb-read-item-to-firestore-py
+name: "CosmosDB read_item to Firestore document.get (Python)"
+description: >
+  Transforms Azure CosmosDB container.read_item() calls to Firestore
+  collection.document().get(). Maps CosmosDB item reads with partition
+  keys to Firestore document reads.
+source_provider: azure
+target_provider: gcp
+source_service: cosmosdb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  imports:
+    - "from azure.cosmos import CosmosClient"
+    - "from azure.cosmos import exceptions"
+  text_patterns:
+    - "read_item"
+    - "container"
+    - "item="
+    - "partition_key"
+transform:
+  replacement_template: |
+    doc = collection.document("{{document_id}}").get()
+    if doc.exists:
+        item = doc.to_dict()
+  import_additions:
+    - "from google.cloud import firestore"
+  import_removals:
+    - "from azure.cosmos import CosmosClient"
+    - "from azure.cosmos import exceptions"
+  notes: >
+    CosmosDB read_item(item=id, partition_key=pk) maps to
+    Firestore document(id).get().
+    CosmosDB raises CosmosResourceNotFoundError when item not found;
+    Firestore returns a DocumentSnapshot where doc.exists is False.
+    CosmosDB partition_key is not needed in Firestore reads.
+    CosmosDB read_item returns the item dict directly;
+    Firestore returns a DocumentSnapshot requiring .to_dict().
+    CosmosDB consistency levels have no direct Firestore equivalent.
+base_confidence: 0.85
+tags:
+  - cosmosdb
+  - firestore
+  - python
+  - database
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      from azure.cosmos import CosmosClient, exceptions
+
+      cosmos_client = CosmosClient(url=endpoint, credential=key)
+      database = cosmos_client.get_database_client("mydb")
+      container = database.get_container_client("users")
+
+      try:
+          item = container.read_item(item="user-001", partition_key="engineering")
+          print(item["name"])
+      except exceptions.CosmosResourceNotFoundError:
+          print("User not found")
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      collection = db.collection("users")
+
+      doc = collection.document("user-001").get()
+      if doc.exists:
+          item = doc.to_dict()
+          print(item["name"])
+      else:
+          print("User not found")

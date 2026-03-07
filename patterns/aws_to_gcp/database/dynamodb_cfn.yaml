@@ -1,0 +1,123 @@
+id: dynamodb-cfn-to-firestore-tf
+name: "DynamoDB CloudFormation to Firestore (Terraform)"
+description: >
+  Transforms an AWS::DynamoDB::Table CloudFormation resource definition to a
+  google_firestore_database Terraform resource. DynamoDB's key-value and
+  document model maps to Firestore's document database, though schema design
+  patterns differ significantly.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: cloudformation
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "AWS::DynamoDB::Table"
+  text_patterns:
+    - "Type: AWS::DynamoDB::Table"
+    - "KeySchema:"
+    - "AttributeDefinitions:"
+    - "BillingMode:"
+    - "TableName:"
+transform:
+  replacement_template: |
+    resource "google_firestore_database" "{{resource_name}}" {
+      project     = var.project_id
+      name        = "{{database_name}}"
+      location_id = "{{location}}"
+      type        = "FIRESTORE_NATIVE"
+
+      concurrency_mode            = "PESSIMISTIC"
+      app_engine_integration_mode = "DISABLED"
+    }
+
+    resource "google_firestore_index" "{{resource_name}}_index" {
+      project    = var.project_id
+      database   = google_firestore_database.{{resource_name}}.name
+      collection = "{{collection_name}}"
+
+      fields {
+        field_path = "{{partition_key}}"
+        order      = "ASCENDING"
+      }
+
+      fields {
+        field_path = "{{sort_key}}"
+        order      = "ASCENDING"
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    DynamoDB and Firestore have fundamentally different data models. DynamoDB
+    uses partition keys and sort keys, while Firestore uses collections and
+    documents. GSIs and LSIs map to Firestore composite indexes. DynamoDB
+    Streams map to Firestore real-time listeners or Cloud Functions triggers.
+    Provisioned capacity has no Firestore equivalent; Firestore auto-scales.
+    TTL maps to Firestore TTL policies. CloudFormation intrinsic functions
+    must be converted to Terraform expressions.
+base_confidence: 0.72
+tags:
+  - dynamodb
+  - firestore
+  - cloudformation
+  - terraform
+  - database
+  - nosql
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      Resources:
+        OrdersTable:
+          Type: AWS::DynamoDB::Table
+          Properties:
+            TableName: !Sub "${AWS::StackName}-orders"
+            BillingMode: PAY_PER_REQUEST
+            AttributeDefinitions:
+              - AttributeName: orderId
+                AttributeType: S
+              - AttributeName: customerId
+                AttributeType: S
+            KeySchema:
+              - AttributeName: orderId
+                KeyType: HASH
+              - AttributeName: customerId
+                KeyType: RANGE
+            GlobalSecondaryIndexes:
+              - IndexName: CustomerIndex
+                KeySchema:
+                  - AttributeName: customerId
+                    KeyType: HASH
+                Projection:
+                  ProjectionType: ALL
+            Tags:
+              - Key: Environment
+                Value: !Ref Environment
+    output: |
+      resource "google_firestore_database" "orders_table" {
+        project     = var.project_id
+        name        = "${var.project_name}-orders"
+        location_id = "nam5"
+        type        = "FIRESTORE_NATIVE"
+
+        concurrency_mode            = "PESSIMISTIC"
+        app_engine_integration_mode = "DISABLED"
+      }
+
+      resource "google_firestore_index" "orders_table_customer_index" {
+        project    = var.project_id
+        database   = google_firestore_database.orders_table.name
+        collection = "orders"
+
+        fields {
+          field_path = "customerId"
+          order      = "ASCENDING"
+        }
+
+        fields {
+          field_path = "orderId"
+          order      = "ASCENDING"
+        }
+      }

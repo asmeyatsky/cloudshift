@@ -1,0 +1,76 @@
+id: sns-client-init-to-pubsub-publisher-py
+name: "SNS client init to Pub/Sub PublisherClient (Python)"
+description: >
+  Transforms SNS client initialization via boto3.client('sns') to
+  Google Cloud Pub/Sub PublisherClient. SNS is a push-based pub/sub
+  messaging service, and its closest GCP equivalent is Cloud Pub/Sub.
+source_provider: aws
+target_provider: gcp
+source_service: sns
+target_service: pubsub
+language: python
+construct_type: client_init
+match_pattern:
+  method_names:
+    - "boto3.client"
+  text_patterns:
+    - "boto3.client('sns')"
+    - 'boto3.client("sns")'
+transform:
+  replacement_template: |
+    publisher = pubsub_v1.PublisherClient()
+  import_additions:
+    - "from google.cloud import pubsub_v1"
+  import_removals:
+    - "import boto3"
+  notes: >
+    SNS supports multiple subscription protocols (HTTP, email, SMS, SQS,
+    Lambda) while Pub/Sub focuses on message delivery to subscribers. SNS
+    topic ARNs map to Pub/Sub topic paths in the format
+    projects/{project}/topics/{topic}. SNS publish() maps to
+    publisher.publish(). SNS subscriptions and filtering should be
+    configured separately in Pub/Sub.
+base_confidence: 0.90
+tags:
+  - sns
+  - pubsub
+  - client-init
+  - python
+examples:
+  - input: |
+      import boto3
+
+      sns_client = boto3.client("sns")
+      sns_client.publish(
+          TopicArn="arn:aws:sns:us-east-1:123456789:my-topic",
+          Message="Hello World",
+      )
+    output: |
+      from google.cloud import pubsub_v1
+
+      publisher = pubsub_v1.PublisherClient()
+      topic_path = publisher.topic_path("my-project", "my-topic")
+      future = publisher.publish(topic_path, data="Hello World".encode("utf-8"))
+      future.result()
+  - input: |
+      import boto3
+
+      sns = boto3.client("sns", region_name="us-west-2")
+      response = sns.publish(
+          TopicArn=topic_arn,
+          Message=json.dumps(payload),
+          MessageAttributes={
+              "event_type": {"DataType": "String", "StringValue": "order_created"}
+          },
+      )
+    output: |
+      from google.cloud import pubsub_v1
+
+      publisher = pubsub_v1.PublisherClient()
+      topic_path = publisher.topic_path(project_id, topic_name)
+      future = publisher.publish(
+          topic_path,
+          data=json.dumps(payload).encode("utf-8"),
+          event_type="order_created",
+      )
+      future.result()

@@ -1,0 +1,82 @@
+id: aws-gcp-sqs-send-message-ts
+name: "SQS SendMessage to PubSub publishMessage"
+description: >
+  Transforms AWS SQS SendMessageCommand calls to Google Cloud Pub/Sub
+  topic().publishMessage() calls in TypeScript. Maps SQS message body
+  and attributes to Pub/Sub message data and attributes.
+source_provider: aws
+target_provider: gcp
+source_service: sqs
+target_service: cloud-pubsub
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { SendMessageCommand } from '@aws-sdk/client-sqs'"
+  client_names:
+    - "new SendMessageCommand"
+  text_patterns:
+    - "SendMessageCommand"
+    - "MessageBody"
+    - "QueueUrl"
+transform:
+  replacement_template: |
+    const pubsub = new PubSub();
+    const messageId = await pubsub.topic(topicName).publishMessage({
+      data: Buffer.from(messageBody),
+      attributes: messageAttributes,
+    });
+  import_additions:
+    - "import { PubSub } from '@google-cloud/pubsub'"
+  import_removals:
+    - "import { SendMessageCommand } from '@aws-sdk/client-sqs'"
+  notes: >
+    SQS SendMessageCommand uses QueueUrl, MessageBody, and optional
+    MessageAttributes and DelaySeconds. Pub/Sub publishMessage takes data
+    as a Buffer and attributes as a string-to-string map. SQS MessageAttributes
+    support typed values (String, Number, Binary); Pub/Sub attributes are all
+    strings. DelaySeconds has no direct Pub/Sub equivalent but can be implemented
+    with Cloud Scheduler or Cloud Tasks.
+base_confidence: 0.85
+tags:
+  - messaging
+  - sqs
+  - pubsub
+  - send
+  - publish
+  - typescript
+examples:
+  - input: |
+      import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+
+      const sqs = new SQSClient({ region: 'us-east-1' });
+
+      async function sendMessage(queueUrl: string, body: object): Promise<string> {
+        const command = new SendMessageCommand({
+          QueueUrl: queueUrl,
+          MessageBody: JSON.stringify(body),
+          MessageAttributes: {
+            eventType: {
+              DataType: 'String',
+              StringValue: 'order.created',
+            },
+          },
+          DelaySeconds: 10,
+        });
+        const response = await sqs.send(command);
+        return response.MessageId!;
+      }
+    output: |
+      import { PubSub } from '@google-cloud/pubsub';
+
+      const pubsub = new PubSub();
+
+      async function sendMessage(topicName: string, body: object): Promise<string> {
+        const messageId = await pubsub.topic(topicName).publishMessage({
+          data: Buffer.from(JSON.stringify(body)),
+          attributes: {
+            eventType: 'order.created',
+          },
+        });
+        return messageId;
+      }

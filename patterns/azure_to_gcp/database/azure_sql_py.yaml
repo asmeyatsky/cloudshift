@@ -1,0 +1,113 @@
+id: azure-sql-to-cloud-sql-py
+name: "Azure SQL pyodbc to Cloud SQL Connector (Python)"
+description: >
+  Transforms Azure SQL Database connections using pyodbc with Azure SQL
+  connection strings to Google Cloud SQL connections using the Cloud SQL
+  Python Connector. Maps ODBC-based patterns to Cloud SQL Auth Proxy
+  or Connector-based patterns.
+source_provider: azure
+target_provider: gcp
+source_service: sql
+target_service: cloud-sql
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "import pyodbc"
+    - "from azure.identity import DefaultAzureCredential"
+  text_patterns:
+    - "pyodbc.connect"
+    - "database.windows.net"
+    - "DRIVER={ODBC Driver"
+    - "Azure SQL"
+    - "mssql+pyodbc"
+    - "sqlalchemy"
+transform:
+  replacement_template: |
+    from google.cloud.sql.connector import Connector
+
+    connector = Connector()
+
+    def getconn():
+        conn = connector.connect(
+            "{{project}}:{{region}}:{{instance}}",
+            "pg8000",
+            user="{{user}}",
+            password="{{password}}",
+            db="{{database}}"
+        )
+        return conn
+
+    pool = sqlalchemy.create_engine(
+        "postgresql+pg8000://",
+        creator=getconn
+    )
+  import_additions:
+    - "from google.cloud.sql.connector import Connector"
+    - "import sqlalchemy"
+  import_removals:
+    - "import pyodbc"
+  notes: >
+    Azure SQL uses ODBC drivers with pyodbc; Cloud SQL uses the
+    Cloud SQL Python Connector or Cloud SQL Auth Proxy.
+    Azure SQL connection string format differs entirely from Cloud SQL.
+    Azure SQL uses SQL Server dialect; Cloud SQL supports PostgreSQL,
+    MySQL, and SQL Server. Schema migration may be needed.
+    Azure Active Directory auth maps to Cloud SQL IAM database authentication.
+    Azure SQL elastic pools map to Cloud SQL read replicas or AlloyDB.
+    Azure SQL firewall rules map to Cloud SQL authorized networks.
+    T-SQL stored procedures may need rewriting for PostgreSQL.
+    Consider using SQLAlchemy for database-agnostic code.
+base_confidence: 0.68
+tags:
+  - azure-sql
+  - cloud-sql
+  - python
+  - database
+  - client-init
+  - high-complexity
+examples:
+  - input: |
+      import pyodbc
+
+      server = "myserver.database.windows.net"
+      database = "mydb"
+      username = "admin"
+      password = os.environ["DB_PASSWORD"]
+
+      conn_str = (
+          f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+          f"SERVER={server};"
+          f"DATABASE={database};"
+          f"UID={username};"
+          f"PWD={password};"
+          f"Encrypt=yes;"
+      )
+      conn = pyodbc.connect(conn_str)
+      cursor = conn.cursor()
+      cursor.execute("SELECT * FROM users WHERE active = 1")
+      rows = cursor.fetchall()
+    output: |
+      from google.cloud.sql.connector import Connector
+      import sqlalchemy
+
+      connector = Connector()
+
+      def getconn():
+          conn = connector.connect(
+              "my-project:us-central1:my-instance",
+              "pg8000",
+              user="admin",
+              password=os.environ["DB_PASSWORD"],
+              db="mydb"
+          )
+          return conn
+
+      pool = sqlalchemy.create_engine(
+          "postgresql+pg8000://",
+          creator=getconn
+      )
+
+      with pool.connect() as conn:
+          result = conn.execute(sqlalchemy.text("SELECT * FROM users WHERE active = true"))
+          rows = result.fetchall()

@@ -1,0 +1,139 @@
+id: aws-cloudwatch-log-group-to-gcp-logging-bucket-tf
+name: "AWS CloudWatch Log Group to GCP Logging Bucket (Terraform)"
+description: >
+  Transforms aws_cloudwatch_log_group to google_logging_project_bucket_config.
+  CloudWatch Log Groups with retention policies map to Cloud Logging log
+  buckets with retention settings. Cloud Logging is automatic in GCP, so
+  log buckets primarily control retention and storage.
+source_provider: aws
+target_provider: gcp
+source_service: cloudwatch-logs
+target_service: cloud-logging
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_cloudwatch_log_group"
+    - "aws_cloudwatch_log_stream"
+    - "aws_cloudwatch_log_metric_filter"
+    - "aws_cloudwatch_log_subscription_filter"
+  text_patterns:
+    - "cloudwatch_log_group"
+    - "retention_in_days"
+    - "log_group"
+    - "kms_key_id"
+transform:
+  replacement_template: |
+    resource "google_logging_project_bucket_config" "{{resource_name}}" {
+      project        = var.project_id
+      location       = "global"
+      bucket_id      = "{{bucket_id}}"
+      retention_days = {{retention_days}}
+      description    = "{{description}}"
+    }
+
+    # Log sink to route logs to the custom bucket
+    resource "google_logging_project_sink" "{{sink_name}}" {
+      name        = "{{sink_name}}"
+      project     = var.project_id
+      destination = "logging.googleapis.com/projects/${var.project_id}/locations/global/buckets/{{bucket_id}}"
+      filter      = "{{log_filter}}"
+
+      unique_writer_identity = true
+    }
+
+    # Metric filter equivalent
+    resource "google_logging_metric" "{{metric_name}}" {
+      name    = "{{metric_name}}"
+      project = var.project_id
+      filter  = "{{metric_filter}}"
+
+      metric_descriptor {
+        metric_kind = "DELTA"
+        value_type  = "INT64"
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    CloudWatch Logs to Cloud Logging mapping:
+      - aws_cloudwatch_log_group maps to google_logging_project_bucket_config.
+      - CloudWatch retention_in_days maps to retention_days.
+        Common values: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545,
+        731, 1827, 3653. Cloud Logging supports 1-3650 days.
+      - CloudWatch log streams have no direct equivalent (Cloud Logging uses
+        structured log entries with labels).
+      - CloudWatch log_metric_filter maps to google_logging_metric.
+      - CloudWatch log subscription_filter maps to google_logging_project_sink
+        routing to Pub/Sub, BigQuery, or Cloud Storage.
+      - CloudWatch KMS encryption maps to CMEK on Cloud Logging buckets.
+      - Cloud Logging automatically collects logs from GCP services (no explicit
+        log group creation needed for most services).
+      - CloudWatch Insights queries map to Cloud Logging query language (different syntax).
+      - CloudWatch log export to S3 maps to log sink to Cloud Storage.
+base_confidence: 0.75
+tags:
+  - cloudwatch
+  - logging
+  - terraform
+  - monitoring
+  - resource-block
+examples:
+  - input: |
+      resource "aws_cloudwatch_log_group" "app" {
+        name              = "/ecs/my-app"
+        retention_in_days = 30
+
+        tags = {
+          Environment = "production"
+          Application = "my-app"
+        }
+      }
+
+      resource "aws_cloudwatch_log_metric_filter" "error_count" {
+        name           = "error-count"
+        log_group_name = aws_cloudwatch_log_group.app.name
+        pattern        = "ERROR"
+
+        metric_transformation {
+          name      = "ErrorCount"
+          namespace = "MyApp"
+          value     = "1"
+        }
+      }
+
+      resource "aws_cloudwatch_log_subscription_filter" "stream" {
+        name            = "log-stream"
+        log_group_name  = aws_cloudwatch_log_group.app.name
+        filter_pattern  = ""
+        destination_arn = aws_kinesis_firehose_delivery_stream.logs.arn
+        role_arn        = aws_iam_role.log_subscription.arn
+      }
+    output: |
+      resource "google_logging_project_bucket_config" "app" {
+        project        = var.project_id
+        location       = "global"
+        bucket_id      = "ecs-my-app"
+        retention_days = 30
+        description    = "Logs for my-app (migrated from CloudWatch)"
+      }
+
+      resource "google_logging_project_sink" "app" {
+        name        = "ecs-my-app-sink"
+        project     = var.project_id
+        destination = "logging.googleapis.com/projects/${var.project_id}/locations/global/buckets/ecs-my-app"
+        filter      = "resource.labels.service_name = \"my-app\""
+
+        unique_writer_identity = true
+      }
+
+      resource "google_logging_metric" "error_count" {
+        name    = "error-count"
+        project = var.project_id
+        filter  = "resource.labels.service_name = \"my-app\" AND textPayload =~ \"ERROR\""
+
+        metric_descriptor {
+          metric_kind = "DELTA"
+          value_type  = "INT64"
+        }
+      }

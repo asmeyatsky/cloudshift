@@ -1,0 +1,148 @@
+id: aws-sns-subscription-to-gcp-pubsub-subscription-tf
+name: "SNS Topic Subscription to Pub/Sub Subscription (Terraform)"
+description: >
+  Transforms aws_sns_topic_subscription to google_pubsub_subscription.
+  Maps SNS subscription protocols and filter policies to Pub/Sub
+  subscription push/pull configurations and filters.
+source_provider: aws
+target_provider: gcp
+source_service: sns
+target_service: pubsub
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_sns_topic_subscription"
+  text_patterns:
+    - "sns_topic_subscription"
+    - "protocol"
+    - "endpoint"
+    - "filter_policy"
+    - "confirmation_timeout_in_minutes"
+    - "raw_message_delivery"
+transform:
+  replacement_template: |
+    resource "google_pubsub_subscription" "{{resource_name}}" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{topic_name}}.id
+      project = var.project_id
+
+      push_config {
+        push_endpoint = "{{endpoint_url}}"
+
+        attributes = {
+          x-goog-version = "v1"
+        }
+
+        oidc_token {
+          service_account_email = google_service_account.{{sa_name}}.email
+        }
+      }
+
+      filter = "{{filter_expression}}"
+
+      ack_deadline_seconds       = 20
+      message_retention_duration = "{{retention_duration}}"
+      retain_acked_messages      = false
+      expiration_policy {
+        ttl = ""
+      }
+
+      retry_policy {
+        minimum_backoff = "10s"
+        maximum_backoff = "600s"
+      }
+
+      dead_letter_policy {
+        dead_letter_topic     = google_pubsub_topic.{{dlq_topic}}.id
+        max_delivery_attempts = 5
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    SNS subscription to Pub/Sub subscription mapping:
+      - SNS protocol "https"/"http" maps to push_config with push_endpoint.
+      - SNS protocol "sqs" maps to pull subscription (no push_config).
+      - SNS protocol "lambda" maps to push to Cloud Functions endpoint.
+      - SNS protocol "email" has no direct equivalent in Pub/Sub.
+      - SNS filter_policy maps to Pub/Sub filter (attribute-based filtering).
+      - SNS raw_message_delivery=true is the default in Pub/Sub.
+      - SNS RedrivePolicy maps to dead_letter_policy in Pub/Sub.
+      - SNS subscription confirmation is automatic in Pub/Sub.
+      - Pub/Sub subscriptions support oidc_token for authenticated push.
+      - Pub/Sub expiration_policy with empty ttl means the subscription never expires.
+base_confidence: 0.82
+tags:
+  - sns
+  - pubsub
+  - subscription
+  - terraform
+  - messaging
+  - resource-block
+examples:
+  - input: |
+      resource "aws_sns_topic_subscription" "webhook" {
+        topic_arn = aws_sns_topic.alerts.arn
+        protocol  = "https"
+        endpoint  = "https://api.example.com/webhook/alerts"
+
+        filter_policy = jsonencode({
+          severity = ["critical", "high"]
+        })
+
+        raw_message_delivery = true
+
+        redrive_policy = jsonencode({
+          deadLetterTargetArn = aws_sqs_queue.dlq.arn
+        })
+      }
+
+      resource "aws_sns_topic_subscription" "sqs_consumer" {
+        topic_arn = aws_sns_topic.alerts.arn
+        protocol  = "sqs"
+        endpoint  = aws_sqs_queue.consumer.arn
+
+        filter_policy = jsonencode({
+          event_type = ["order_created"]
+        })
+      }
+    output: |
+      resource "google_pubsub_subscription" "webhook" {
+        name    = "alerts-webhook"
+        topic   = google_pubsub_topic.alerts.id
+        project = var.project_id
+
+        push_config {
+          push_endpoint = "https://api.example.com/webhook/alerts"
+
+          attributes = {
+            x-goog-version = "v1"
+          }
+
+          oidc_token {
+            service_account_email = google_service_account.pubsub_invoker.email
+          }
+        }
+
+        filter = "attributes.severity = \"critical\" OR attributes.severity = \"high\""
+
+        ack_deadline_seconds = 20
+
+        dead_letter_policy {
+          dead_letter_topic     = google_pubsub_topic.dlq.id
+          max_delivery_attempts = 5
+        }
+      }
+
+      resource "google_pubsub_subscription" "sqs_consumer" {
+        name    = "alerts-consumer"
+        topic   = google_pubsub_topic.alerts.id
+        project = var.project_id
+
+        # Pull subscription (no push_config) - equivalent to SQS consumer
+        filter = "attributes.event_type = \"order_created\""
+
+        ack_deadline_seconds       = 20
+        message_retention_duration = "604800s"
+      }

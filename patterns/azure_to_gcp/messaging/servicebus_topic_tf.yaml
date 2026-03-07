@@ -1,0 +1,166 @@
+id: azure-servicebus-topic-to-pubsub-tf
+name: "Azure Service Bus Topic + Subscription to Pub/Sub (Terraform)"
+description: >
+  Transforms azurerm_servicebus_topic and azurerm_servicebus_subscription to
+  google_pubsub_topic and google_pubsub_subscription. Maps Service Bus
+  topic/subscription pub-sub patterns to Pub/Sub equivalents.
+source_provider: azure
+target_provider: gcp
+source_service: service-bus
+target_service: pubsub
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_servicebus_topic"
+    - "azurerm_servicebus_subscription"
+    - "azurerm_servicebus_subscription_rule"
+  text_patterns:
+    - "servicebus_topic"
+    - "servicebus_subscription"
+    - "topic_id"
+    - "max_delivery_count"
+    - "default_message_ttl"
+    - "enable_batched_operations"
+    - "subscription_rule"
+transform:
+  replacement_template: |
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_retention_duration = "{{retention_duration}}"
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    resource "google_pubsub_subscription" "{{subscription_name}}" {
+      name    = "{{subscription_name}}"
+      topic   = google_pubsub_topic.{{resource_name}}.id
+      project = var.project_id
+
+      ack_deadline_seconds       = {{ack_deadline}}
+      message_retention_duration = "{{msg_retention}}"
+
+      filter = "{{filter_expression}}"
+
+      expiration_policy {
+        ttl = ""
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure Service Bus Topic + Subscription maps naturally to Pub/Sub
+    Topic + Subscription (both are pub-sub patterns).
+    Azure servicebus_topic maps directly to google_pubsub_topic.
+    Azure servicebus_subscription maps to google_pubsub_subscription.
+    Azure subscription_rule with SQL filter maps to Pub/Sub subscription
+    filter (limited to attribute-based filtering).
+    Azure correlation filter maps to Pub/Sub attribute filters.
+    Azure SQL filter expressions are more powerful than Pub/Sub filters;
+    complex filters may need application-level filtering.
+    Azure forward_to (auto-forwarding) has no direct Pub/Sub equivalent;
+    use Cloud Functions or Dataflow for message routing.
+    Azure max_delivery_count maps to dead_letter_policy.max_delivery_attempts.
+    Azure enable_batched_operations has no Pub/Sub equivalent
+    (Pub/Sub handles batching internally).
+base_confidence: 0.80
+tags:
+  - service-bus
+  - pubsub
+  - terraform
+  - messaging
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_servicebus_topic" "notifications" {
+        name         = "notifications"
+        namespace_id = azurerm_servicebus_namespace.main.id
+
+        default_message_ttl       = "P7D"
+        max_size_in_megabytes     = 5120
+        enable_batched_operations = true
+      }
+
+      resource "azurerm_servicebus_subscription" "email" {
+        name               = "email-notifications"
+        topic_id           = azurerm_servicebus_topic.notifications.id
+        max_delivery_count = 5
+      }
+
+      resource "azurerm_servicebus_subscription" "sms" {
+        name               = "sms-notifications"
+        topic_id           = azurerm_servicebus_topic.notifications.id
+        max_delivery_count = 3
+      }
+
+      resource "azurerm_servicebus_subscription_rule" "sms_filter" {
+        name            = "sms-filter"
+        subscription_id = azurerm_servicebus_subscription.sms.id
+        filter_type     = "CorrelationFilter"
+
+        correlation_filter {
+          label = "urgent"
+        }
+      }
+    output: |
+      resource "google_pubsub_topic" "notifications" {
+        name    = "notifications"
+        project = var.project_id
+
+        message_retention_duration = "604800s"
+      }
+
+      resource "google_pubsub_topic" "notifications_dead_letter" {
+        name    = "notifications-dead-letter"
+        project = var.project_id
+      }
+
+      resource "google_pubsub_subscription" "email" {
+        name    = "email-notifications"
+        topic   = google_pubsub_topic.notifications.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "604800s"
+
+        dead_letter_policy {
+          dead_letter_topic     = google_pubsub_topic.notifications_dead_letter.id
+          max_delivery_attempts = 5
+        }
+
+        expiration_policy {
+          ttl = ""
+        }
+      }
+
+      resource "google_pubsub_subscription" "sms" {
+        name    = "sms-notifications"
+        topic   = google_pubsub_topic.notifications.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "604800s"
+
+        # Pub/Sub filter on message attributes (equivalent to correlation filter)
+        filter = "attributes.label = \"urgent\""
+
+        dead_letter_policy {
+          dead_letter_topic     = google_pubsub_topic.notifications_dead_letter.id
+          max_delivery_attempts = 3
+        }
+
+        expiration_policy {
+          ttl = ""
+        }
+      }
+
+      resource "google_pubsub_subscription" "notifications_dead_letter" {
+        name    = "notifications-dead-letter-sub"
+        topic   = google_pubsub_topic.notifications_dead_letter.id
+        project = var.project_id
+      }

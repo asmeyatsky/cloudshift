@@ -1,0 +1,130 @@
+id: azure-app-insights-to-cloud-monitoring-py
+name: "Azure Application Insights to Cloud Monitoring (Python)"
+description: >
+  Transforms Azure Monitor / Application Insights telemetry using
+  opencensus or azure.monitor to Google Cloud Logging and OpenTelemetry.
+  Maps tracing, logging, and metrics collection patterns.
+source_provider: azure
+target_provider: gcp
+source_service: monitor
+target_service: cloud-monitoring
+language: python
+construct_type: client_init
+match_pattern:
+  imports:
+    - "from opencensus.ext.azure import metrics_exporter"
+    - "from opencensus.ext.azure.log_exporter import AzureLogHandler"
+    - "from opencensus.ext.azure.trace_exporter import AzureExporter"
+    - "from azure.monitor.opentelemetry.exporter import AzureMonitorTraceExporter"
+    - "from azure.monitor.opentelemetry.exporter import AzureMonitorLogExporter"
+    - "from azure.monitor.opentelemetry.exporter import AzureMonitorMetricExporter"
+    - "from applicationinsights import TelemetryClient"
+  text_patterns:
+    - "AzureExporter"
+    - "AzureLogHandler"
+    - "AzureMonitorTraceExporter"
+    - "AzureMonitorMetricExporter"
+    - "APPINSIGHTS_INSTRUMENTATIONKEY"
+    - "APPLICATION_INSIGHTS"
+    - "TelemetryClient"
+    - "connection_string"
+transform:
+  replacement_template: |
+    from google.cloud import logging as cloud_logging
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.gcp.trace import CloudTraceSpanExporter
+
+    # Logging
+    logging_client = cloud_logging.Client()
+    logging_client.setup_logging()
+
+    # Tracing
+    tracer_provider = TracerProvider()
+    cloud_trace_exporter = CloudTraceSpanExporter()
+    tracer_provider.add_span_processor(
+        BatchSpanProcessor(cloud_trace_exporter)
+    )
+    trace.set_tracer_provider(tracer_provider)
+  import_additions:
+    - "from google.cloud import logging as cloud_logging"
+    - "from opentelemetry import trace"
+    - "from opentelemetry.sdk.trace import TracerProvider"
+    - "from opentelemetry.exporter.gcp.trace import CloudTraceSpanExporter"
+  import_removals:
+    - "from opencensus.ext.azure import metrics_exporter"
+    - "from opencensus.ext.azure.log_exporter import AzureLogHandler"
+    - "from opencensus.ext.azure.trace_exporter import AzureExporter"
+    - "from azure.monitor.opentelemetry.exporter import AzureMonitorTraceExporter"
+  notes: >
+    Azure Application Insights maps to a combination of Cloud Logging,
+    Cloud Trace, and Cloud Monitoring in GCP.
+    Azure opencensus-ext-azure is deprecated; both Azure and GCP now
+    recommend OpenTelemetry as the standard telemetry framework.
+    Azure AzureLogHandler maps to google.cloud.logging Client.
+    Azure AzureExporter (traces) maps to CloudTraceSpanExporter.
+    Azure metrics_exporter maps to OpenTelemetry GCP metrics exporter.
+    Azure instrumentation key / connection string maps to GCP project
+    auto-detection (no explicit key needed with default credentials).
+    Azure custom events/metrics API differs from Cloud Monitoring custom metrics.
+    Azure Live Metrics has no direct GCP equivalent.
+    Azure Application Map maps to Cloud Trace service graph.
+base_confidence: 0.65
+tags:
+  - application-insights
+  - cloud-monitoring
+  - cloud-logging
+  - cloud-trace
+  - python
+  - monitoring
+  - client-init
+  - high-complexity
+examples:
+  - input: |
+      import logging
+      from opencensus.ext.azure.log_exporter import AzureLogHandler
+      from opencensus.ext.azure.trace_exporter import AzureExporter
+      from opencensus.trace.tracer import Tracer
+      from opencensus.trace.samplers import ProbabilitySampler
+
+      logger = logging.getLogger(__name__)
+      logger.addHandler(AzureLogHandler(
+          connection_string="InstrumentationKey=your-key-here"
+      ))
+
+      tracer = Tracer(
+          exporter=AzureExporter(connection_string="InstrumentationKey=your-key-here"),
+          sampler=ProbabilitySampler(1.0)
+      )
+
+      logger.warning("Application started")
+
+      with tracer.span(name="process_request"):
+          result = handle_request()
+          logger.info(f"Request processed: {result}")
+    output: |
+      import logging
+      from google.cloud import logging as cloud_logging
+      from opentelemetry import trace
+      from opentelemetry.sdk.trace import TracerProvider
+      from opentelemetry.sdk.trace.export import BatchSpanProcessor
+      from opentelemetry.exporter.gcp.trace import CloudTraceSpanExporter
+
+      logging_client = cloud_logging.Client()
+      logging_client.setup_logging()
+      logger = logging.getLogger(__name__)
+
+      tracer_provider = TracerProvider()
+      cloud_trace_exporter = CloudTraceSpanExporter()
+      tracer_provider.add_span_processor(
+          BatchSpanProcessor(cloud_trace_exporter)
+      )
+      trace.set_tracer_provider(tracer_provider)
+      tracer = trace.get_tracer(__name__)
+
+      logger.warning("Application started")
+
+      with tracer.start_as_current_span("process_request"):
+          result = handle_request()
+          logger.info(f"Request processed: {result}")

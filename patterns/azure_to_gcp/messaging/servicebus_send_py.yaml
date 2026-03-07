@@ -1,0 +1,85 @@
+id: azure-servicebus-send-to-pubsub-publish-py
+name: "Azure Service Bus send_messages to Pub/Sub publish (Python)"
+description: >
+  Transforms Azure Service Bus sender.send_messages() calls to
+  GCP Pub/Sub publisher.publish(). Maps Service Bus message sending
+  with properties to Pub/Sub publish with attributes.
+source_provider: azure
+target_provider: gcp
+source_service: service-bus
+target_service: pubsub
+language: python
+construct_type: method_call
+match_pattern:
+  imports:
+    - "from azure.servicebus import ServiceBusClient"
+    - "from azure.servicebus import ServiceBusMessage"
+  text_patterns:
+    - "send_messages"
+    - "ServiceBusMessage"
+    - "get_queue_sender"
+    - "get_topic_sender"
+    - "sender"
+transform:
+  replacement_template: |
+    topic_path = publisher.topic_path("{{project_id}}", "{{topic_name}}")
+    future = publisher.publish(
+        topic_path,
+        data={{message_data}}.encode("utf-8"),
+        **{{attributes}}
+    )
+    future.result()
+  import_additions:
+    - "from google.cloud import pubsub_v1"
+  import_removals:
+    - "from azure.servicebus import ServiceBusClient"
+    - "from azure.servicebus import ServiceBusMessage"
+  notes: >
+    Azure sender.send_messages(ServiceBusMessage(body)) maps to
+    publisher.publish(topic, data=body.encode("utf-8")).
+    Azure ServiceBusMessage.application_properties maps to Pub/Sub
+    message attributes (must be string key-value pairs).
+    Azure ServiceBusMessage.subject maps to a Pub/Sub attribute.
+    Azure ServiceBusMessage.content_type maps to a Pub/Sub attribute.
+    Azure send_messages with a list sends a batch; Pub/Sub publish is
+    per-message but supports batching via BatchSettings.
+    Azure scheduled_enqueue_time_utc has no direct Pub/Sub equivalent;
+    use Cloud Tasks for delayed delivery.
+    Azure session_id maps to Pub/Sub ordering_key.
+base_confidence: 0.82
+tags:
+  - service-bus
+  - pubsub
+  - python
+  - messaging
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      from azure.servicebus import ServiceBusClient, ServiceBusMessage
+
+      servicebus_client = ServiceBusClient.from_connection_string(conn_str)
+
+      with servicebus_client.get_queue_sender("orders") as sender:
+          message = ServiceBusMessage(
+              json.dumps({"order_id": "12345", "amount": 99.99}),
+              content_type="application/json",
+              subject="OrderCreated",
+              application_properties={"priority": "high"}
+          )
+          sender.send_messages(message)
+    output: |
+      from google.cloud import pubsub_v1
+      import json
+
+      publisher = pubsub_v1.PublisherClient()
+      topic_path = publisher.topic_path("my-project", "orders")
+
+      future = publisher.publish(
+          topic_path,
+          data=json.dumps({"order_id": "12345", "amount": 99.99}).encode("utf-8"),
+          content_type="application/json",
+          subject="OrderCreated",
+          priority="high"
+      )
+      future.result()

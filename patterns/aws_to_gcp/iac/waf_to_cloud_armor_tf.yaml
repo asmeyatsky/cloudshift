@@ -1,0 +1,271 @@
+id: aws-waf-to-gcp-cloud-armor-tf
+name: "AWS WAFv2 to GCP Cloud Armor (Terraform)"
+description: >
+  Transforms aws_wafv2_web_acl to google_compute_security_policy. AWS WAF
+  Web ACLs with rules and rule groups map to Cloud Armor security policies
+  with rules. Both provide Layer 7 protection but have different rule
+  configuration syntax.
+source_provider: aws
+target_provider: gcp
+source_service: waf
+target_service: cloud-armor
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_wafv2_web_acl"
+    - "aws_wafv2_rule_group"
+    - "aws_wafv2_ip_set"
+    - "aws_wafv2_web_acl_association"
+  text_patterns:
+    - "wafv2"
+    - "web_acl"
+    - "rule"
+    - "visibility_config"
+    - "default_action"
+    - "managed_rule_group"
+transform:
+  replacement_template: |
+    resource "google_compute_security_policy" "{{resource_name}}" {
+      name    = "{{policy_name}}"
+      project = var.project_id
+
+      # Default rule (equivalent to WAF default_action)
+      rule {
+        action   = "{{default_action}}"
+        priority = 2147483647
+
+        match {
+          versioned_expr = "SRC_IPS_V1"
+          config {
+            src_ip_ranges = ["*"]
+          }
+        }
+
+        description = "Default rule"
+      }
+
+      # Rate limiting rule
+      rule {
+        action   = "throttle"
+        priority = {{rule_priority}}
+
+        match {
+          versioned_expr = "SRC_IPS_V1"
+          config {
+            src_ip_ranges = ["*"]
+          }
+        }
+
+        rate_limit_options {
+          conform_action = "allow"
+          exceed_action  = "deny(429)"
+          rate_limit_threshold {
+            count        = {{rate_limit}}
+            interval_sec = {{interval}}
+          }
+        }
+
+        description = "{{rule_description}}"
+      }
+
+      # IP block rule
+      rule {
+        action   = "deny(403)"
+        priority = {{ip_rule_priority}}
+
+        match {
+          versioned_expr = "SRC_IPS_V1"
+          config {
+            src_ip_ranges = ["{{blocked_ip_range}}"]
+          }
+        }
+
+        description = "Block specific IPs"
+      }
+
+      # WAF preconfigured rule (equivalent to managed rule group)
+      rule {
+        action   = "deny(403)"
+        priority = {{managed_rule_priority}}
+
+        match {
+          expr {
+            expression = "evaluatePreconfiguredWaf('{{waf_rule}}', {'sensitivity': {{sensitivity}}})"
+          }
+        }
+
+        description = "{{managed_rule_description}}"
+      }
+
+      adaptive_protection_config {
+        layer_7_ddos_defense_config {
+          enable = true
+        }
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    WAFv2 to Cloud Armor mapping:
+      - aws_wafv2_web_acl maps to google_compute_security_policy.
+      - WAF default_action allow maps to default rule with action "allow".
+      - WAF default_action block maps to default rule with action "deny(403)".
+      - WAF managed rule groups map to Cloud Armor preconfigured WAF rules:
+        - AWSManagedRulesCommonRuleSet -> xss-v33-stable, sqli-v33-stable
+        - AWSManagedRulesSQLiRuleSet -> sqli-v33-stable
+        - AWSManagedRulesKnownBadInputsRuleSet -> lfi-v33-stable, rfi-v33-stable
+      - WAF rate-based rules map to Cloud Armor rate_limit_options.
+      - WAF ip_set rules map to Cloud Armor SRC_IPS_V1 rules.
+      - WAF geo_match maps to Cloud Armor expression origin.region_code.
+      - WAF custom_response maps to deny(status_code) in Cloud Armor.
+      - Cloud Armor must be attached to a backend service (not directly to ALB).
+      - aws_wafv2_web_acl_association is replaced by security_policy on
+        google_compute_backend_service.
+base_confidence: 0.70
+tags:
+  - waf
+  - cloud-armor
+  - security
+  - terraform
+  - iac
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_wafv2_web_acl" "main" {
+        name        = "main-waf"
+        description = "Main WAF ACL"
+        scope       = "REGIONAL"
+
+        default_action {
+          allow {}
+        }
+
+        rule {
+          name     = "rate-limit"
+          priority = 1
+
+          action {
+            block {}
+          }
+
+          statement {
+            rate_based_statement {
+              limit              = 2000
+              aggregate_key_type = "IP"
+            }
+          }
+
+          visibility_config {
+            sampled_requests_enabled   = true
+            cloudwatch_metrics_enabled = true
+            metric_name                = "rate-limit"
+          }
+        }
+
+        rule {
+          name     = "aws-managed-common"
+          priority = 2
+
+          override_action {
+            none {}
+          }
+
+          statement {
+            managed_rule_group_statement {
+              name        = "AWSManagedRulesCommonRuleSet"
+              vendor_name = "AWS"
+            }
+          }
+
+          visibility_config {
+            sampled_requests_enabled   = true
+            cloudwatch_metrics_enabled = true
+            metric_name                = "aws-managed-common"
+          }
+        }
+
+        visibility_config {
+          sampled_requests_enabled   = true
+          cloudwatch_metrics_enabled = true
+          metric_name                = "main-waf"
+        }
+      }
+    output: |
+      resource "google_compute_security_policy" "main" {
+        name    = "main-waf"
+        project = var.project_id
+
+        # Default rule - allow all traffic
+        rule {
+          action   = "allow"
+          priority = 2147483647
+
+          match {
+            versioned_expr = "SRC_IPS_V1"
+            config {
+              src_ip_ranges = ["*"]
+            }
+          }
+
+          description = "Default allow rule"
+        }
+
+        # Rate limiting rule
+        rule {
+          action   = "throttle"
+          priority = 1000
+
+          match {
+            versioned_expr = "SRC_IPS_V1"
+            config {
+              src_ip_ranges = ["*"]
+            }
+          }
+
+          rate_limit_options {
+            conform_action = "allow"
+            exceed_action  = "deny(429)"
+            rate_limit_threshold {
+              count        = 2000
+              interval_sec = 300
+            }
+          }
+
+          description = "Rate limiting - 2000 requests per 5 minutes"
+        }
+
+        # Equivalent to AWSManagedRulesCommonRuleSet
+        rule {
+          action   = "deny(403)"
+          priority = 2000
+
+          match {
+            expr {
+              expression = "evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})"
+            }
+          }
+
+          description = "XSS protection (from AWSManagedRulesCommonRuleSet)"
+        }
+
+        rule {
+          action   = "deny(403)"
+          priority = 2001
+
+          match {
+            expr {
+              expression = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1})"
+            }
+          }
+
+          description = "SQLi protection (from AWSManagedRulesCommonRuleSet)"
+        }
+
+        adaptive_protection_config {
+          layer_7_ddos_defense_config {
+            enable = true
+          }
+        }
+      }

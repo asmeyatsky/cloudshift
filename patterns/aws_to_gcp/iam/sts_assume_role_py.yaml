@@ -1,0 +1,83 @@
+id: sts-assume-role-to-gcp-impersonation-py
+name: "STS assume_role to GCP service account impersonation (Python)"
+description: >
+  Transforms AWS STS assume_role calls to Google Cloud service account
+  impersonation using google.auth.impersonated_credentials. AWS STS
+  provides temporary credentials by assuming an IAM role, while GCP
+  achieves similar functionality through service account impersonation.
+source_provider: aws
+target_provider: gcp
+source_service: sts
+target_service: iam
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "assume_role"
+    - "boto3.client"
+  text_patterns:
+    - "boto3.client('sts')"
+    - 'boto3.client("sts")'
+    - "assume_role"
+    - "RoleArn"
+transform:
+  replacement_template: |
+    from google.auth import impersonated_credentials
+    import google.auth
+
+    source_credentials, project = google.auth.default()
+    target_credentials = impersonated_credentials.Credentials(
+        source_credentials=source_credentials,
+        target_principal=target_service_account_email,
+        target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+  import_additions:
+    - "from google.auth import impersonated_credentials"
+    - "import google.auth"
+  import_removals:
+    - "import boto3"
+  notes: >
+    AWS STS assume_role returns temporary AccessKeyId, SecretAccessKey, and
+    SessionToken credentials. GCP impersonated credentials are handled
+    transparently by the auth library and do not expose raw keys. The
+    RoleArn maps to target_principal (a service account email). The
+    DurationSeconds parameter has no direct equivalent; GCP impersonated
+    credentials are refreshed automatically. The source identity must have
+    the roles/iam.serviceAccountTokenCreator role on the target service
+    account.
+base_confidence: 0.72
+tags:
+  - sts
+  - iam
+  - assume-role
+  - impersonation
+  - python
+examples:
+  - input: |
+      import boto3
+
+      sts_client = boto3.client("sts")
+      response = sts_client.assume_role(
+          RoleArn="arn:aws:iam::123456789012:role/CrossAccountRole",
+          RoleSessionName="my-session",
+          DurationSeconds=3600,
+      )
+      credentials = response["Credentials"]
+      s3_client = boto3.client(
+          "s3",
+          aws_access_key_id=credentials["AccessKeyId"],
+          aws_secret_access_key=credentials["SecretAccessKey"],
+          aws_session_token=credentials["SessionToken"],
+      )
+    output: |
+      from google.auth import impersonated_credentials
+      import google.auth
+      from google.cloud import storage
+
+      source_credentials, project = google.auth.default()
+      target_credentials = impersonated_credentials.Credentials(
+          source_credentials=source_credentials,
+          target_principal="cross-account-sa@other-project.iam.gserviceaccount.com",
+          target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
+      )
+      storage_client = storage.Client(credentials=target_credentials)

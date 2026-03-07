@@ -1,0 +1,88 @@
+id: aws-gcp-dynamodb-query-ts
+name: "DynamoDB Query to Firestore Collection Query"
+description: >
+  Transforms AWS DynamoDB QueryCommand calls to Google Cloud Firestore
+  collection().where().get() calls in TypeScript. Maps DynamoDB
+  KeyConditionExpression and FilterExpression to Firestore where clauses.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { QueryCommand } from '@aws-sdk/client-dynamodb'"
+  client_names:
+    - "new QueryCommand"
+  text_patterns:
+    - "QueryCommand"
+    - "KeyConditionExpression"
+    - ".send(query"
+transform:
+  replacement_template: |
+    const firestore = new Firestore();
+    const snapshot = await firestore
+      .collection(tableName)
+      .where(field, '==', value)
+      .get();
+    const results = snapshot.docs.map((doc) => doc.data());
+  import_additions:
+    - "import { Firestore } from '@google-cloud/firestore'"
+  import_removals:
+    - "import { QueryCommand } from '@aws-sdk/client-dynamodb'"
+  notes: >
+    DynamoDB QueryCommand uses KeyConditionExpression with ExpressionAttributeValues
+    and optional FilterExpression. Firestore uses chained where() calls. DynamoDB
+    supports begins_with, between, and comparison operators on sort keys; Firestore
+    supports ==, !=, <, <=, >, >=, in, array-contains, etc. Pagination uses
+    ExclusiveStartKey in DynamoDB vs startAfter() in Firestore. Index requirements
+    differ significantly between the two services.
+base_confidence: 0.75
+tags:
+  - database
+  - dynamodb
+  - firestore
+  - query
+  - typescript
+examples:
+  - input: |
+      import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb';
+
+      const dynamo = new DynamoDBClient({ region: 'us-east-1' });
+
+      async function getOrdersByUser(userId: string): Promise<any[]> {
+        const command = new QueryCommand({
+          TableName: 'Orders',
+          KeyConditionExpression: 'userId = :uid',
+          ExpressionAttributeValues: {
+            ':uid': { S: userId },
+          },
+          ScanIndexForward: false,
+          Limit: 50,
+        });
+        const response = await dynamo.send(command);
+        return (response.Items || []).map((item) => ({
+          orderId: item.orderId.S,
+          userId: item.userId.S,
+          total: Number(item.total.N),
+        }));
+      }
+    output: |
+      import { Firestore } from '@google-cloud/firestore';
+
+      const firestore = new Firestore();
+
+      async function getOrdersByUser(userId: string): Promise<any[]> {
+        const snapshot = await firestore
+          .collection('Orders')
+          .where('userId', '==', userId)
+          .orderBy('orderId', 'desc')
+          .limit(50)
+          .get();
+        return snapshot.docs.map((doc) => ({
+          orderId: doc.id,
+          userId: doc.data().userId,
+          total: doc.data().total,
+        }));
+      }

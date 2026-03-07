@@ -1,0 +1,110 @@
+id: rds-client-to-cloud-sql-py
+name: "RDS client to Cloud SQL connector (Python)"
+description: >
+  Transforms AWS RDS client initialization and direct database connections
+  using RDS endpoints to Google Cloud SQL connections via the Cloud SQL
+  Python Connector or Cloud SQL Auth Proxy. Covers boto3.client('rds')
+  usage as well as psycopg2 and pymysql connections targeting RDS hosts.
+source_provider: aws
+target_provider: gcp
+source_service: rds
+target_service: cloud-sql
+language: python
+construct_type: client_init
+match_pattern:
+  method_names:
+    - "boto3.client"
+    - "psycopg2.connect"
+    - "pymysql.connect"
+  text_patterns:
+    - "boto3.client('rds')"
+    - 'boto3.client("rds")'
+    - "psycopg2.connect"
+    - "pymysql.connect"
+    - ".rds.amazonaws.com"
+transform:
+  replacement_template: |
+    from google.cloud.sql.connector import Connector
+
+    connector = Connector()
+    conn = connector.connect(
+        "project:region:instance",
+        "pg8000",
+        user="db_user",
+        password="db_pass",
+        db="my_database",
+    )
+  import_additions:
+    - "from google.cloud.sql.connector import Connector"
+  import_removals:
+    - "import boto3"
+  notes: >
+    RDS instances are accessed via DNS endpoints
+    (*.rds.amazonaws.com) with optional IAM authentication via
+    generate_db_auth_token(). Cloud SQL supports three connection methods:
+    the Cloud SQL Python Connector (recommended), Cloud SQL Auth Proxy
+    (sidecar), or direct private IP. The Cloud SQL Python Connector handles
+    SSL and IAM authentication automatically. For psycopg2 connections, use
+    pg8000 as the driver with the connector, or use psycopg2 with the Auth
+    Proxy on localhost. pymysql connections map to pymysql driver with the
+    connector.
+base_confidence: 0.70
+tags:
+  - rds
+  - cloud-sql
+  - database
+  - psycopg2
+  - pymysql
+  - python
+examples:
+  - input: |
+      import boto3
+      import psycopg2
+
+      rds_client = boto3.client("rds")
+      token = rds_client.generate_db_auth_token(
+          DBHostname="mydb.abc123.us-east-1.rds.amazonaws.com",
+          Port=5432,
+          DBUsername="iam_user",
+      )
+      conn = psycopg2.connect(
+          host="mydb.abc123.us-east-1.rds.amazonaws.com",
+          port=5432,
+          user="iam_user",
+          password=token,
+          database="mydb",
+          sslmode="require",
+      )
+    output: |
+      from google.cloud.sql.connector import Connector, IPTypes
+
+      connector = Connector()
+      conn = connector.connect(
+          "my-project:us-central1:mydb",
+          "pg8000",
+          user="iam_user",
+          db="mydb",
+          enable_iam_auth=True,
+          ip_type=IPTypes.PRIVATE,
+      )
+  - input: |
+      import pymysql
+
+      conn = pymysql.connect(
+          host="mydb.abc123.us-east-1.rds.amazonaws.com",
+          user="admin",
+          password="secret",
+          database="myapp",
+          port=3306,
+      )
+    output: |
+      from google.cloud.sql.connector import Connector
+
+      connector = Connector()
+      conn = connector.connect(
+          "my-project:us-central1:mydb",
+          "pymysql",
+          user="admin",
+          password="secret",
+          db="myapp",
+      )

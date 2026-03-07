@@ -1,0 +1,166 @@
+id: aws-security-group-to-gcp-firewall-tf
+name: "AWS Security Group to GCP Firewall Rule (Terraform)"
+description: >
+  Transforms aws_security_group and aws_security_group_rule to
+  google_compute_firewall. AWS security groups are stateful and attached
+  to instances, while GCP firewall rules are applied at the network level
+  using target tags or service accounts.
+source_provider: aws
+target_provider: gcp
+source_service: security-group
+target_service: compute-firewall
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_security_group"
+    - "aws_security_group_rule"
+    - "aws_vpc_security_group_ingress_rule"
+    - "aws_vpc_security_group_egress_rule"
+  text_patterns:
+    - "ingress"
+    - "egress"
+    - "from_port"
+    - "to_port"
+    - "cidr_blocks"
+    - "security_group"
+transform:
+  replacement_template: |
+    resource "google_compute_firewall" "{{resource_name}}_ingress" {
+      name    = "{{firewall_name}}-ingress"
+      project = var.project_id
+      network = google_compute_network.{{network_name}}.id
+
+      direction = "INGRESS"
+      priority  = 1000
+
+      allow {
+        protocol = "{{protocol}}"
+        ports    = ["{{port_range}}"]
+      }
+
+      source_ranges = ["{{cidr_blocks}}"]
+      target_tags   = ["{{target_tag}}"]
+    }
+
+    resource "google_compute_firewall" "{{resource_name}}_egress" {
+      name    = "{{firewall_name}}-egress"
+      project = var.project_id
+      network = google_compute_network.{{network_name}}.id
+
+      direction = "EGRESS"
+      priority  = 1000
+
+      allow {
+        protocol = "{{protocol}}"
+        ports    = ["{{port_range}}"]
+      }
+
+      destination_ranges = ["{{cidr_blocks}}"]
+      target_tags        = ["{{target_tag}}"]
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    AWS security groups are stateful and instance-level; GCP firewall rules are
+    network-level and can target instances via tags or service accounts.
+    Key differences:
+      - AWS SG ingress/egress blocks become separate google_compute_firewall resources.
+      - AWS SG references (source_security_group_id) map to source_tags or
+        source_service_accounts in GCP.
+      - AWS allows 0.0.0.0/0 as cidr_blocks; same in GCP as source_ranges.
+      - AWS from_port/to_port range maps to GCP ports list.
+      - protocol -1 (all traffic) in AWS maps to protocol "all" in GCP.
+      - GCP firewall rules require explicit priority (lower number = higher priority).
+base_confidence: 0.78
+tags:
+  - security-group
+  - firewall
+  - terraform
+  - networking
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "aws_security_group" "web" {
+        name        = "web-sg"
+        description = "Security group for web servers"
+        vpc_id      = aws_vpc.main.id
+
+        ingress {
+          description = "HTTPS"
+          from_port   = 443
+          to_port     = 443
+          protocol    = "tcp"
+          cidr_blocks = ["0.0.0.0/0"]
+        }
+
+        ingress {
+          description = "HTTP"
+          from_port   = 80
+          to_port     = 80
+          protocol    = "tcp"
+          cidr_blocks = ["0.0.0.0/0"]
+        }
+
+        egress {
+          from_port   = 0
+          to_port     = 0
+          protocol    = "-1"
+          cidr_blocks = ["0.0.0.0/0"]
+        }
+
+        tags = {
+          Name = "web-sg"
+        }
+      }
+    output: |
+      resource "google_compute_firewall" "web_allow_https" {
+        name    = "web-sg-allow-https"
+        project = var.project_id
+        network = google_compute_network.main.id
+
+        direction = "INGRESS"
+        priority  = 1000
+
+        allow {
+          protocol = "tcp"
+          ports    = ["443"]
+        }
+
+        source_ranges = ["0.0.0.0/0"]
+        target_tags   = ["web"]
+      }
+
+      resource "google_compute_firewall" "web_allow_http" {
+        name    = "web-sg-allow-http"
+        project = var.project_id
+        network = google_compute_network.main.id
+
+        direction = "INGRESS"
+        priority  = 1000
+
+        allow {
+          protocol = "tcp"
+          ports    = ["80"]
+        }
+
+        source_ranges = ["0.0.0.0/0"]
+        target_tags   = ["web"]
+      }
+
+      resource "google_compute_firewall" "web_allow_egress" {
+        name    = "web-sg-allow-egress"
+        project = var.project_id
+        network = google_compute_network.main.id
+
+        direction = "EGRESS"
+        priority  = 1000
+
+        allow {
+          protocol = "all"
+        }
+
+        destination_ranges = ["0.0.0.0/0"]
+        target_tags        = ["web"]
+      }

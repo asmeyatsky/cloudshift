@@ -1,0 +1,78 @@
+id: dynamodb-delete-item-to-firestore-delete-py
+name: "DynamoDB delete_item to Firestore delete (Python)"
+description: >
+  Transforms DynamoDB delete_item calls to Firestore
+  collection.document(id).delete(). DynamoDB identifies items by a primary
+  key (partition key and optional sort key), while Firestore identifies
+  documents by their document ID within a collection.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "delete_item"
+  text_patterns:
+    - "delete_item"
+    - "Key="
+transform:
+  replacement_template: |
+    collection.document(id).delete()
+  import_additions:
+    - "from google.cloud import firestore"
+  import_removals:
+    - "import boto3"
+  notes: >
+    DynamoDB delete_item requires the full primary key (partition key and
+    sort key if defined). Firestore delete requires only the document ID.
+    If the DynamoDB table uses a composite key, you may need to encode both
+    key components into the Firestore document ID or restructure as
+    subcollections. ConditionExpression in DynamoDB can be mapped to
+    Firestore transactions with precondition checks.
+base_confidence: 0.88
+tags:
+  - dynamodb
+  - firestore
+  - delete
+  - python
+examples:
+  - input: |
+      import boto3
+
+      dynamodb = boto3.resource("dynamodb")
+      table = dynamodb.Table("Users")
+      table.delete_item(
+          Key={"user_id": "abc123"}
+      )
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      db.collection("Users").document("abc123").delete()
+  - input: |
+      import boto3
+
+      dynamodb = boto3.client("dynamodb")
+      dynamodb.delete_item(
+          TableName="Orders",
+          Key={
+              "order_id": {"S": "order-456"},
+              "customer_id": {"S": "cust-789"},
+          },
+          ConditionExpression="attribute_exists(order_id)",
+      )
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      doc_ref = db.collection("Orders").document("order-456")
+      # Use a transaction to ensure the document exists before deleting
+      @firestore.transactional
+      def delete_if_exists(transaction, ref):
+          snapshot = ref.get(transaction=transaction)
+          if snapshot.exists:
+              transaction.delete(ref)
+      transaction = db.transaction()
+      delete_if_exists(transaction, doc_ref)

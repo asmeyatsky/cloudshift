@@ -1,0 +1,143 @@
+id: aws-ses-to-gcp-email-tf
+name: "AWS SES to GCP Email (Third-Party) (Terraform)"
+description: >
+  Documents the migration path from AWS SES resources to GCP. GCP does not
+  have a native email sending service equivalent to SES. Recommended
+  alternatives include SendGrid, Mailgun, or other third-party SMTP services
+  available on Google Cloud Marketplace.
+source_provider: aws
+target_provider: gcp
+source_service: ses
+target_service: smtp-third-party
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_ses_domain_identity"
+    - "aws_ses_domain_dkim"
+    - "aws_ses_email_identity"
+    - "aws_ses_configuration_set"
+    - "aws_ses_receipt_rule_set"
+    - "aws_ses_receipt_rule"
+    - "aws_ses_template"
+  text_patterns:
+    - "ses_domain"
+    - "ses_email"
+    - "ses_configuration_set"
+    - "ses_receipt"
+    - "ses_template"
+transform:
+  replacement_template: |
+    # GCP does not have a native email service equivalent to AWS SES.
+    # Use a third-party service such as SendGrid, Mailgun, or Postmark.
+    #
+    # Option 1: SendGrid via Google Cloud Marketplace
+    # Configure SendGrid API key as a secret:
+    resource "google_secret_manager_secret" "sendgrid_api_key" {
+      secret_id = "sendgrid-api-key"
+      project   = var.project_id
+
+      replication {
+        auto {}
+      }
+    }
+
+    resource "google_secret_manager_secret_version" "sendgrid_api_key" {
+      secret      = google_secret_manager_secret.sendgrid_api_key.id
+      secret_data = var.sendgrid_api_key
+    }
+
+    # DNS records for email domain verification (equivalent to SES domain identity)
+    resource "google_dns_record_set" "{{resource_name}}_spf" {
+      name         = "{{domain}}."
+      managed_zone = google_dns_managed_zone.{{zone_name}}.name
+      type         = "TXT"
+      ttl          = 3600
+      rrdatas      = ["\"v=spf1 include:sendgrid.net ~all\""]
+    }
+
+    resource "google_dns_record_set" "{{resource_name}}_dkim" {
+      name         = "s1._domainkey.{{domain}}."
+      managed_zone = google_dns_managed_zone.{{zone_name}}.name
+      type         = "CNAME"
+      ttl          = 3600
+      rrdatas      = ["s1.domainkey.u{{sendgrid_account}}.wl.sendgrid.net."]
+    }
+
+    # Note: SendGrid/Mailgun configuration is typically done via their
+    # respective APIs or Terraform providers, not native GCP resources.
+    # See: https://registry.terraform.io/providers/Trois-Sixes-Development/sendgrid/latest
+  import_additions: []
+  import_removals: []
+  notes: >
+    GCP has no native equivalent to AWS SES. Migration options:
+      - SendGrid: Available on Google Cloud Marketplace. Free tier up to 12,000
+        emails/month. Has a Terraform provider for full configuration.
+      - Mailgun: Third-party SMTP with Terraform provider support.
+      - Postmark: Third-party transactional email service.
+      - SMTP relay via Compute Engine: Limited to port 587, max 10,000 recipients/day.
+    Key differences:
+      - SES domain identities map to DNS verification records for the chosen provider.
+      - SES DKIM maps to provider-specific DKIM configuration.
+      - SES configuration sets map to provider-specific tracking configurations.
+      - SES receipt rules (inbound email) have no direct equivalent; consider
+        Cloud Functions triggered by the email provider's webhook.
+      - SES templates map to provider-specific template systems.
+      - SES sending quotas and reputation management are provider-specific.
+    This is a low-confidence pattern due to the lack of a native GCP equivalent.
+base_confidence: 0.55
+tags:
+  - ses
+  - email
+  - smtp
+  - terraform
+  - iac
+  - resource-block
+  - no-direct-equivalent
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_ses_domain_identity" "main" {
+        domain = "example.com"
+      }
+
+      resource "aws_ses_domain_dkim" "main" {
+        domain = aws_ses_domain_identity.main.domain
+      }
+
+      resource "aws_ses_configuration_set" "main" {
+        name = "main-config"
+      }
+
+      resource "aws_ses_email_identity" "sender" {
+        email = "noreply@example.com"
+      }
+    output: |
+      # GCP has no native email service. Use SendGrid via Cloud Marketplace.
+
+      resource "google_secret_manager_secret" "sendgrid_api_key" {
+        secret_id = "sendgrid-api-key"
+        project   = var.project_id
+
+        replication {
+          auto {}
+        }
+      }
+
+      resource "google_secret_manager_secret_version" "sendgrid_api_key" {
+        secret      = google_secret_manager_secret.sendgrid_api_key.id
+        secret_data = var.sendgrid_api_key
+      }
+
+      # DNS records for SendGrid domain verification
+      resource "google_dns_record_set" "main_spf" {
+        name         = "example.com."
+        managed_zone = google_dns_managed_zone.main.name
+        type         = "TXT"
+        ttl          = 3600
+        rrdatas      = ["\"v=spf1 include:sendgrid.net ~all\""]
+      }
+
+      # Note: Complete SendGrid configuration (domain authentication, sender
+      # verification, tracking settings) should be done via the SendGrid
+      # Terraform provider or API.

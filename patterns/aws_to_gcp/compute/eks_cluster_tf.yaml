@@ -1,0 +1,233 @@
+id: aws-eks-cluster-to-gcp-gke-cluster-tf
+name: "AWS EKS Cluster to GCP GKE Cluster (Terraform)"
+description: >
+  Transforms aws_eks_cluster and aws_eks_node_group to google_container_cluster
+  and google_container_node_pool. Both are managed Kubernetes services with
+  similar concepts but different configuration structures.
+source_provider: aws
+target_provider: gcp
+source_service: eks
+target_service: gke
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_eks_cluster"
+    - "aws_eks_node_group"
+    - "aws_eks_addon"
+    - "aws_eks_fargate_profile"
+  text_patterns:
+    - "eks_cluster"
+    - "node_group"
+    - "kubernetes_version"
+    - "scaling_config"
+    - "instance_types"
+    - "endpoint_private_access"
+transform:
+  replacement_template: |
+    resource "google_container_cluster" "{{resource_name}}" {
+      name     = "{{cluster_name}}"
+      project  = var.project_id
+      location = "{{region}}"
+
+      # Use separately managed node pools
+      remove_default_node_pool = true
+      initial_node_count       = 1
+
+      min_master_version = "{{kubernetes_version}}"
+
+      network    = google_compute_network.{{network_name}}.id
+      subnetwork = google_compute_subnetwork.{{subnet_name}}.id
+
+      ip_allocation_policy {
+        cluster_secondary_range_name  = "pods"
+        services_secondary_range_name = "services"
+      }
+
+      private_cluster_config {
+        enable_private_nodes    = {{enable_private_nodes}}
+        enable_private_endpoint = {{enable_private_endpoint}}
+        master_ipv4_cidr_block  = "{{master_cidr}}"
+      }
+
+      master_authorized_networks_config {
+        cidr_blocks {
+          cidr_block   = "{{authorized_cidr}}"
+          display_name = "{{authorized_name}}"
+        }
+      }
+
+      workload_identity_config {
+        workload_pool = "${var.project_id}.svc.id.goog"
+      }
+
+      logging_config {
+        enable_components = ["SYSTEM_COMPONENTS", "WORKLOADS"]
+      }
+
+      monitoring_config {
+        enable_components = ["SYSTEM_COMPONENTS"]
+        managed_prometheus {
+          enabled = true
+        }
+      }
+    }
+
+    resource "google_container_node_pool" "{{node_pool_name}}" {
+      name       = "{{node_pool_name}}"
+      project    = var.project_id
+      location   = "{{region}}"
+      cluster    = google_container_cluster.{{resource_name}}.name
+
+      node_count = {{desired_size}}
+
+      autoscaling {
+        min_node_count = {{min_size}}
+        max_node_count = {{max_size}}
+      }
+
+      node_config {
+        machine_type = "{{machine_type}}"
+        disk_size_gb = {{disk_size}}
+        disk_type    = "pd-ssd"
+
+        oauth_scopes = [
+          "https://www.googleapis.com/auth/cloud-platform",
+        ]
+
+        labels = {
+          {{labels}}
+        }
+
+        tags = ["{{network_tags}}"]
+
+        service_account = google_service_account.{{sa_name}}.email
+      }
+
+      management {
+        auto_repair  = true
+        auto_upgrade = true
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    EKS to GKE mapping:
+      - aws_eks_cluster maps to google_container_cluster.
+      - aws_eks_node_group maps to google_container_node_pool.
+      - EKS instance_types map to GKE machine_type (e.g., m5.large -> n2-standard-2).
+      - EKS scaling_config maps to GKE autoscaling block.
+      - EKS endpoint_private_access maps to private_cluster_config.
+      - EKS subnet_ids are replaced by network/subnetwork references.
+      - EKS IRSA (IAM Roles for Service Accounts) maps to GKE Workload Identity.
+      - EKS add-ons (vpc-cni, coredns, kube-proxy) are managed by GKE automatically.
+      - EKS Fargate profiles map to GKE Autopilot mode or Cloud Run for Anthos.
+      - EKS managed node group AMI types map to GKE node image types.
+base_confidence: 0.78
+tags:
+  - eks
+  - gke
+  - kubernetes
+  - terraform
+  - compute
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      resource "aws_eks_cluster" "main" {
+        name     = "production-cluster"
+        role_arn = aws_iam_role.eks.arn
+        version  = "1.28"
+
+        vpc_config {
+          subnet_ids              = aws_subnet.private[*].id
+          endpoint_private_access = true
+          endpoint_public_access  = true
+          security_group_ids      = [aws_security_group.eks.id]
+        }
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "aws_eks_node_group" "workers" {
+        cluster_name    = aws_eks_cluster.main.name
+        node_group_name = "workers"
+        node_role_arn   = aws_iam_role.node.arn
+        subnet_ids      = aws_subnet.private[*].id
+        instance_types  = ["m5.large"]
+
+        scaling_config {
+          desired_size = 3
+          min_size     = 2
+          max_size     = 10
+        }
+
+        disk_size = 50
+
+        tags = {
+          Environment = "production"
+        }
+      }
+    output: |
+      resource "google_container_cluster" "main" {
+        name     = "production-cluster"
+        project  = var.project_id
+        location = "us-central1"
+
+        remove_default_node_pool = true
+        initial_node_count       = 1
+        min_master_version       = "1.28"
+
+        network    = google_compute_network.main.id
+        subnetwork = google_compute_subnetwork.private.id
+
+        ip_allocation_policy {
+          cluster_secondary_range_name  = "pods"
+          services_secondary_range_name = "services"
+        }
+
+        private_cluster_config {
+          enable_private_nodes    = true
+          enable_private_endpoint = false
+          master_ipv4_cidr_block  = "172.16.0.0/28"
+        }
+
+        workload_identity_config {
+          workload_pool = "${var.project_id}.svc.id.goog"
+        }
+      }
+
+      resource "google_container_node_pool" "workers" {
+        name     = "workers"
+        project  = var.project_id
+        location = "us-central1"
+        cluster  = google_container_cluster.main.name
+
+        node_count = 3
+
+        autoscaling {
+          min_node_count = 2
+          max_node_count = 10
+        }
+
+        node_config {
+          machine_type = "n2-standard-2"
+          disk_size_gb = 50
+          disk_type    = "pd-ssd"
+
+          oauth_scopes = [
+            "https://www.googleapis.com/auth/cloud-platform",
+          ]
+
+          labels = {
+            environment = "production"
+          }
+        }
+
+        management {
+          auto_repair  = true
+          auto_upgrade = true
+        }
+      }

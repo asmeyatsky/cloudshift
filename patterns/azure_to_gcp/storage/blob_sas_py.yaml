@@ -1,0 +1,87 @@
+id: azure-blob-sas-to-gcs-signed-url-py
+name: "Azure Blob SAS Token to GCS Signed URL (Python)"
+description: >
+  Transforms Azure Blob Storage generate_blob_sas token generation to
+  GCS blob.generate_signed_url(). Maps SAS token permissions and expiry
+  to signed URL parameters.
+source_provider: azure
+target_provider: gcp
+source_service: blob-storage
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  imports:
+    - "from azure.storage.blob import generate_blob_sas"
+    - "from azure.storage.blob import BlobSasPermissions"
+    - "from azure.storage.blob import generate_container_sas"
+  text_patterns:
+    - "generate_blob_sas"
+    - "generate_container_sas"
+    - "BlobSasPermissions"
+    - "account_key"
+    - "expiry"
+    - "permission"
+transform:
+  replacement_template: |
+    bucket = storage_client.bucket("{{bucket_name}}")
+    blob = bucket.blob("{{blob_name}}")
+    url = blob.generate_signed_url(
+        version="v4",
+        expiration=datetime.timedelta(hours={{expiry_hours}}),
+        method="{{method}}"
+    )
+  import_additions:
+    - "from google.cloud import storage"
+    - "import datetime"
+  import_removals:
+    - "from azure.storage.blob import generate_blob_sas"
+    - "from azure.storage.blob import BlobSasPermissions"
+  notes: >
+    Azure SAS tokens are query-string tokens appended to URLs.
+    GCS signed URLs are complete URLs with embedded signatures.
+    Azure BlobSasPermissions(read=True) maps to GCS method="GET".
+    Azure BlobSasPermissions(write=True) maps to GCS method="PUT".
+    Azure BlobSasPermissions(delete=True) maps to GCS method="DELETE".
+    Azure generate_container_sas (container-level access) has no direct
+    GCS equivalent; you must generate individual signed URLs per blob.
+    Azure SAS IP restrictions and protocols have no GCS signed URL equivalent.
+    GCS signed URLs require a service account key or impersonation;
+    Azure SAS can use account keys or user delegation keys.
+    Maximum expiry for GCS V4 signed URLs is 7 days.
+base_confidence: 0.75
+tags:
+  - azure-blob
+  - cloud-storage
+  - python
+  - storage
+  - method-call
+  - medium-complexity
+  - security
+examples:
+  - input: |
+      from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+      from datetime import datetime, timedelta, timezone
+
+      sas_token = generate_blob_sas(
+          account_name="mystorageaccount",
+          container_name="my-container",
+          blob_name="reports/quarterly.pdf",
+          account_key=account_key,
+          permission=BlobSasPermissions(read=True),
+          expiry=datetime.now(timezone.utc) + timedelta(hours=2)
+      )
+      blob_url = f"https://mystorageaccount.blob.core.windows.net/my-container/reports/quarterly.pdf?{sas_token}"
+    output: |
+      from google.cloud import storage
+      import datetime
+
+      storage_client = storage.Client()
+      bucket = storage_client.bucket("my-container")
+      blob = bucket.blob("reports/quarterly.pdf")
+
+      url = blob.generate_signed_url(
+          version="v4",
+          expiration=datetime.timedelta(hours=2),
+          method="GET"
+      )

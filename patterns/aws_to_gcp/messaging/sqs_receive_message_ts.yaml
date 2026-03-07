@@ -1,0 +1,105 @@
+id: aws-gcp-sqs-receive-message-ts
+name: "SQS ReceiveMessage to PubSub Subscription Pull"
+description: >
+  Transforms AWS SQS ReceiveMessageCommand calls to Google Cloud Pub/Sub
+  subscription.pull() calls in TypeScript. Maps SQS queue polling to
+  Pub/Sub subscription-based message retrieval.
+source_provider: aws
+target_provider: gcp
+source_service: sqs
+target_service: cloud-pubsub
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { ReceiveMessageCommand } from '@aws-sdk/client-sqs'"
+  client_names:
+    - "new ReceiveMessageCommand"
+  text_patterns:
+    - "ReceiveMessageCommand"
+    - "QueueUrl"
+    - "MaxNumberOfMessages"
+    - "WaitTimeSeconds"
+transform:
+  replacement_template: |
+    const pubsub = new PubSub();
+    const subscription = pubsub.subscription(subscriptionName);
+    const [messages] = await subscription.pull({ maxMessages: maxMessages });
+    for (const message of messages) {
+      // process message.data and message.attributes
+      message.ack();
+    }
+  import_additions:
+    - "import { PubSub } from '@google-cloud/pubsub'"
+  import_removals:
+    - "import { ReceiveMessageCommand } from '@aws-sdk/client-sqs'"
+  notes: >
+    SQS ReceiveMessageCommand polls a queue with QueueUrl, MaxNumberOfMessages,
+    and WaitTimeSeconds. Pub/Sub uses pull-based or streaming pull on a
+    subscription. SQS uses VisibilityTimeout and requires explicit deletion;
+    Pub/Sub uses ack deadlines and message.ack(). For long-polling patterns,
+    consider using subscription.on('message') for streaming pull instead of
+    one-shot pull.
+base_confidence: 0.75
+tags:
+  - messaging
+  - sqs
+  - pubsub
+  - receive
+  - pull
+  - typescript
+examples:
+  - input: |
+      import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
+
+      const sqs = new SQSClient({ region: 'us-east-1' });
+
+      async function receiveMessages(queueUrl: string): Promise<any[]> {
+        const command = new ReceiveMessageCommand({
+          QueueUrl: queueUrl,
+          MaxNumberOfMessages: 10,
+          WaitTimeSeconds: 20,
+          MessageAttributeNames: ['All'],
+        });
+        const response = await sqs.send(command);
+        const messages = response.Messages || [];
+
+        for (const message of messages) {
+          console.log('Received:', message.Body);
+          await sqs.send(new DeleteMessageCommand({
+            QueueUrl: queueUrl,
+            ReceiptHandle: message.ReceiptHandle!,
+          }));
+        }
+
+        return messages.map((m) => JSON.parse(m.Body!));
+      }
+    output: |
+      import { PubSub, Message } from '@google-cloud/pubsub';
+
+      const pubsub = new PubSub();
+
+      async function receiveMessages(subscriptionName: string): Promise<any[]> {
+        const subscription = pubsub.subscription(subscriptionName);
+        const results: any[] = [];
+
+        return new Promise((resolve) => {
+          const messageHandler = (message: Message) => {
+            console.log('Received:', message.data.toString());
+            results.push(JSON.parse(message.data.toString()));
+            message.ack();
+
+            if (results.length >= 10) {
+              subscription.removeListener('message', messageHandler);
+              resolve(results);
+            }
+          };
+
+          subscription.on('message', messageHandler);
+
+          setTimeout(() => {
+            subscription.removeListener('message', messageHandler);
+            resolve(results);
+          }, 20000);
+        });
+      }

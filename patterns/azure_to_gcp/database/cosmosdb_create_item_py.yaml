@@ -1,0 +1,73 @@
+id: azure-cosmosdb-create-item-to-firestore-py
+name: "CosmosDB create_item to Firestore document.set (Python)"
+description: >
+  Transforms Azure CosmosDB container.create_item() calls to Firestore
+  collection.document().set(). Maps CosmosDB item creation with partition
+  keys to Firestore document creation.
+source_provider: azure
+target_provider: gcp
+source_service: cosmosdb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  imports:
+    - "from azure.cosmos import CosmosClient"
+    - "from azure.cosmos import exceptions"
+  text_patterns:
+    - "create_item"
+    - "container"
+    - "body="
+    - "partition_key"
+transform:
+  replacement_template: |
+    doc_ref = collection.document("{{document_id}}")
+    doc_ref.set({{document_data}})
+  import_additions:
+    - "from google.cloud import firestore"
+  import_removals:
+    - "from azure.cosmos import CosmosClient"
+    - "from azure.cosmos import exceptions"
+  notes: >
+    CosmosDB create_item(body={...}) maps to Firestore document().set({...}).
+    CosmosDB "id" field maps to Firestore document ID; remove "id" from the
+    document body if desired to avoid duplication.
+    CosmosDB partition_key is handled by Firestore collection structure
+    (no explicit partition key needed).
+    CosmosDB create_item raises ConflictError if item exists; Firestore
+    set() overwrites by default. Use create() to get conflict behavior.
+    CosmosDB enable_cross_partition_query has no Firestore equivalent.
+base_confidence: 0.85
+tags:
+  - cosmosdb
+  - firestore
+  - python
+  - database
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      from azure.cosmos import CosmosClient
+
+      cosmos_client = CosmosClient(url=endpoint, credential=key)
+      database = cosmos_client.get_database_client("mydb")
+      container = database.get_container_client("users")
+
+      container.create_item(body={
+          "id": "user-001",
+          "name": "Alice",
+          "email": "alice@example.com",
+          "department": "engineering"
+      })
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      collection = db.collection("users")
+
+      doc_ref = collection.document("user-001")
+      doc_ref.set({
+          "name": "Alice",
+          "email": "alice@example.com",
+          "department": "engineering"
+      })

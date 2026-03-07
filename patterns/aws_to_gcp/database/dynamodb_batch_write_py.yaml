@@ -1,0 +1,79 @@
+id: dynamodb-batch-write-to-firestore-batch-py
+name: "DynamoDB batch_writer to Firestore batch (Python)"
+description: >
+  Transforms DynamoDB batch_writer and batch_write_item calls to Firestore
+  batch writes using db.batch(). DynamoDB batch_writer is a context manager
+  that buffers and sends items in batches of up to 25, while Firestore batch
+  supports up to 500 operations per commit.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "batch_writer"
+    - "batch_write_item"
+  text_patterns:
+    - "batch_writer"
+    - "batch_write_item"
+transform:
+  replacement_template: |
+    batch = db.batch()
+    batch.set(doc_ref, data)
+    batch.commit()
+  import_additions:
+    - "from google.cloud import firestore"
+  import_removals:
+    - "import boto3"
+  notes: >
+    DynamoDB batch_writer automatically handles chunking into groups of 25
+    and retries unprocessed items. Firestore batch supports up to 500
+    operations but does not auto-chunk, so large batches need manual
+    splitting. Each Firestore batch operation can be set, update, or
+    delete. The batch must be explicitly committed with batch.commit().
+base_confidence: 0.78
+tags:
+  - dynamodb
+  - firestore
+  - batch
+  - python
+examples:
+  - input: |
+      import boto3
+
+      dynamodb = boto3.resource("dynamodb")
+      table = dynamodb.Table("Users")
+      with table.batch_writer() as batch:
+          for item in items:
+              batch.put_item(Item=item)
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      batch = db.batch()
+      for item in items:
+          doc_ref = db.collection("Users").document(item["id"])
+          batch.set(doc_ref, item)
+      batch.commit()
+  - input: |
+      import boto3
+
+      dynamodb = boto3.client("dynamodb")
+      dynamodb.batch_write_item(
+          RequestItems={
+              "Users": [
+                  {"PutRequest": {"Item": {"id": {"S": "1"}, "name": {"S": "Alice"}}}},
+                  {"PutRequest": {"Item": {"id": {"S": "2"}, "name": {"S": "Bob"}}}},
+              ]
+          }
+      )
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      batch = db.batch()
+      batch.set(db.collection("Users").document("1"), {"id": "1", "name": "Alice"})
+      batch.set(db.collection("Users").document("2"), {"id": "2", "name": "Bob"})
+      batch.commit()

@@ -1,0 +1,73 @@
+id: dynamodb-scan-to-firestore-stream-py
+name: "DynamoDB scan to Firestore stream (Python)"
+description: >
+  Transforms DynamoDB table.scan() calls with optional FilterExpression
+  to Firestore collection.stream(). DynamoDB scan reads every item in a
+  table and optionally applies a filter, while Firestore stream returns
+  all documents in a collection with optional server-side query filters.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  method_names:
+    - "scan"
+  text_patterns:
+    - "table.scan("
+    - "FilterExpression"
+transform:
+  replacement_template: |
+    collection.stream()
+  import_additions:
+    - "from google.cloud import firestore"
+  import_removals:
+    - "import boto3"
+    - "from boto3.dynamodb.conditions import Key, Attr"
+  notes: >
+    DynamoDB scan reads the entire table and filters client-side or
+    server-side, which can be expensive. Firestore stream() retrieves all
+    documents but supports server-side where() filters for more efficient
+    queries. FilterExpression conditions should be converted to Firestore
+    where() clauses applied before stream(). Pagination with LastEvaluatedKey
+    in DynamoDB maps to Firestore start_after() or limit() cursors.
+base_confidence: 0.75
+tags:
+  - dynamodb
+  - firestore
+  - scan
+  - stream
+  - python
+examples:
+  - input: |
+      import boto3
+      from boto3.dynamodb.conditions import Attr
+
+      dynamodb = boto3.resource("dynamodb")
+      table = dynamodb.Table("Users")
+      response = table.scan(
+          FilterExpression=Attr("status").eq("active")
+      )
+      items = response["Items"]
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      collection = db.collection("Users")
+      docs = collection.where("status", "==", "active").stream()
+      items = [doc.to_dict() for doc in docs]
+  - input: |
+      import boto3
+
+      dynamodb = boto3.resource("dynamodb")
+      table = dynamodb.Table("Products")
+      response = table.scan()
+      items = response["Items"]
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      collection = db.collection("Products")
+      docs = collection.stream()
+      items = [doc.to_dict() for doc in docs]

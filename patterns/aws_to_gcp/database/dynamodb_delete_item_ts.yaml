@@ -1,0 +1,67 @@
+id: aws-gcp-dynamodb-delete-item-ts
+name: "DynamoDB DeleteItem to Firestore Document Delete"
+description: >
+  Transforms AWS DynamoDB DeleteItemCommand calls to Google Cloud Firestore
+  collection().doc().delete() calls in TypeScript. Maps DynamoDB table and
+  key parameters to Firestore document references for deletion.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { DeleteItemCommand } from '@aws-sdk/client-dynamodb'"
+  client_names:
+    - "new DeleteItemCommand"
+  text_patterns:
+    - "DeleteItemCommand"
+    - ".send(deleteItem"
+transform:
+  replacement_template: |
+    const firestore = new Firestore();
+    await firestore.collection(tableName).doc(docId).delete();
+  import_additions:
+    - "import { Firestore } from '@google-cloud/firestore'"
+  import_removals:
+    - "import { DeleteItemCommand } from '@aws-sdk/client-dynamodb'"
+  notes: >
+    DynamoDB DeleteItemCommand uses TableName and Key with typed attribute values.
+    Firestore doc().delete() requires only the document reference path. DynamoDB
+    supports ConditionExpression for conditional deletes; Firestore can use
+    precondition options with lastUpdateTime for similar behavior. DynamoDB can
+    return the deleted item with ReturnValues; Firestore delete does not return
+    the document data.
+base_confidence: 0.85
+tags:
+  - database
+  - dynamodb
+  - firestore
+  - delete
+  - typescript
+examples:
+  - input: |
+      import { DynamoDBClient, DeleteItemCommand } from '@aws-sdk/client-dynamodb';
+
+      const dynamo = new DynamoDBClient({ region: 'us-east-1' });
+
+      async function deleteUser(id: string): Promise<void> {
+        const command = new DeleteItemCommand({
+          TableName: 'Users',
+          Key: {
+            id: { S: id },
+          },
+        });
+        await dynamo.send(command);
+        console.log(`Deleted user ${id}`);
+      }
+    output: |
+      import { Firestore } from '@google-cloud/firestore';
+
+      const firestore = new Firestore();
+
+      async function deleteUser(id: string): Promise<void> {
+        await firestore.collection('Users').doc(id).delete();
+        console.log(`Deleted user ${id}`);
+      }

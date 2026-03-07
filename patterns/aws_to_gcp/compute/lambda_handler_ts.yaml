@@ -1,0 +1,124 @@
+id: aws-gcp-lambda-handler-ts
+name: "Lambda Handler to Cloud Function Handler"
+description: >
+  Transforms AWS Lambda handler functions with APIGatewayProxyEvent and
+  APIGatewayProxyResult types to Google Cloud Function HTTP handlers with
+  Express-compatible Request and Response objects in TypeScript.
+source_provider: aws
+target_provider: gcp
+source_service: lambda
+target_service: cloud-functions
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'"
+    - "import { APIGatewayEvent } from 'aws-lambda'"
+  client_names: []
+  text_patterns:
+    - "APIGatewayProxyEvent"
+    - "APIGatewayProxyResult"
+    - "APIGatewayEvent"
+    - "exports.handler"
+    - "statusCode"
+    - "event.body"
+    - "event.pathParameters"
+    - "event.queryStringParameters"
+transform:
+  replacement_template: |
+    import { Request, Response } from '@google-cloud/functions-framework';
+
+    export function handler(req: Request, res: Response): void {
+      // req.body, req.query, req.params replace event properties
+      // res.status(200).json({}) replaces return { statusCode, body }
+    }
+  import_additions:
+    - "import { Request, Response } from '@google-cloud/functions-framework'"
+    - "import { HttpFunction } from '@google-cloud/functions-framework'"
+  import_removals:
+    - "import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'"
+    - "import { APIGatewayEvent } from 'aws-lambda'"
+    - "import { Context } from 'aws-lambda'"
+  notes: >
+    Lambda handlers receive event and context objects and return a response object
+    with statusCode and body. Cloud Functions use Express-compatible req/res objects.
+    event.body maps to req.body (auto-parsed in Cloud Functions). event.pathParameters
+    maps to req.params. event.queryStringParameters maps to req.query.
+    event.headers maps to req.headers. The response pattern changes from returning
+    an object to calling res.status().json(). Lambda context (requestId, etc.)
+    has no direct equivalent in Cloud Functions.
+base_confidence: 0.80
+tags:
+  - compute
+  - lambda
+  - cloud-functions
+  - handler
+  - http
+  - typescript
+examples:
+  - input: |
+      import {
+        APIGatewayProxyEvent,
+        APIGatewayProxyResult,
+        Context,
+      } from 'aws-lambda';
+
+      export const handler = async (
+        event: APIGatewayProxyEvent,
+        context: Context
+      ): Promise<APIGatewayProxyResult> => {
+        try {
+          const body = JSON.parse(event.body || '{}');
+          const userId = event.pathParameters?.userId;
+          const limit = event.queryStringParameters?.limit || '10';
+
+          const result = await processRequest(userId!, body, parseInt(limit));
+
+          return {
+            statusCode: 200,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+            body: JSON.stringify({ data: result }),
+          };
+        } catch (error) {
+          console.error('Error:', error);
+          return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Internal server error' }),
+          };
+        }
+      };
+
+      async function processRequest(userId: string, body: any, limit: number) {
+        return { userId, received: body, limit };
+      }
+    output: |
+      import { HttpFunction } from '@google-cloud/functions-framework';
+      import { Request, Response } from 'express';
+
+      export const handler: HttpFunction = async (
+        req: Request,
+        res: Response
+      ): Promise<void> => {
+        try {
+          const body = req.body || {};
+          const userId = req.params.userId;
+          const limit = (req.query.limit as string) || '10';
+
+          const result = await processRequest(userId, body, parseInt(limit));
+
+          res
+            .set('Access-Control-Allow-Origin', '*')
+            .status(200)
+            .json({ data: result });
+        } catch (error) {
+          console.error('Error:', error);
+          res.status(500).json({ error: 'Internal server error' });
+        }
+      };
+
+      async function processRequest(userId: string, body: any, limit: number) {
+        return { userId, received: body, limit };
+      }

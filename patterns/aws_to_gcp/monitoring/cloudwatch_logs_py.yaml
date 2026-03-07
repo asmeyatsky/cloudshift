@@ -1,0 +1,95 @@
+id: cloudwatch-logs-to-cloud-logging-py
+name: "CloudWatch Logs to Cloud Logging (Python)"
+description: >
+  Transforms CloudWatch Logs client initialization and log event calls
+  to Google Cloud Logging. CloudWatch Logs uses log groups and log streams
+  to organize log entries, while Cloud Logging uses loggers with structured
+  log entries and automatic resource detection.
+source_provider: aws
+target_provider: gcp
+source_service: logs
+target_service: cloud-logging
+language: python
+construct_type: client_init
+match_pattern:
+  method_names:
+    - "boto3.client"
+    - "put_log_events"
+    - "create_log_group"
+    - "create_log_stream"
+  text_patterns:
+    - "boto3.client('logs')"
+    - 'boto3.client("logs")'
+    - "put_log_events"
+    - "create_log_group"
+    - "create_log_stream"
+transform:
+  replacement_template: |
+    from google.cloud import logging as cloud_logging
+
+    client = cloud_logging.Client()
+    logger = client.logger("my-log")
+    logger.log_text("Log message")
+  import_additions:
+    - "from google.cloud import logging as cloud_logging"
+  import_removals:
+    - "import boto3"
+  notes: >
+    CloudWatch Logs requires explicit creation of log groups and log
+    streams before writing log events, and each put_log_events call
+    requires a sequence token. Cloud Logging handles log organization
+    automatically; no pre-creation of groups or streams is needed. The
+    log group name maps to the Cloud Logging logger name. Structured
+    logging is supported via log_struct(). Cloud Logging also integrates
+    with Python's standard logging module via client.setup_logging().
+base_confidence: 0.78
+tags:
+  - cloudwatch-logs
+  - cloud-logging
+  - logging
+  - python
+examples:
+  - input: |
+      import boto3
+      import time
+
+      logs_client = boto3.client("logs")
+      logs_client.create_log_group(logGroupName="/myapp/production")
+      logs_client.create_log_stream(
+          logGroupName="/myapp/production",
+          logStreamName="api-server",
+      )
+      logs_client.put_log_events(
+          logGroupName="/myapp/production",
+          logStreamName="api-server",
+          logEvents=[
+              {
+                  "timestamp": int(time.time() * 1000),
+                  "message": "Request processed successfully",
+              }
+          ],
+      )
+    output: |
+      from google.cloud import logging as cloud_logging
+
+      client = cloud_logging.Client()
+      logger = client.logger("myapp-production")
+      logger.log_text("Request processed successfully", labels={"stream": "api-server"})
+  - input: |
+      import boto3
+
+      logs = boto3.client("logs")
+      logs.put_log_events(
+          logGroupName="app-logs",
+          logStreamName="worker",
+          logEvents=[
+              {"timestamp": ts, "message": json.dumps({"action": "process", "item_id": 42})},
+          ],
+          sequenceToken=token,
+      )
+    output: |
+      from google.cloud import logging as cloud_logging
+
+      client = cloud_logging.Client()
+      logger = client.logger("app-logs")
+      logger.log_struct({"action": "process", "item_id": 42}, labels={"stream": "worker"})

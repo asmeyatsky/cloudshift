@@ -1,0 +1,81 @@
+id: azure-cosmosdb-query-to-firestore-py
+name: "CosmosDB query_items to Firestore where.stream (Python)"
+description: >
+  Transforms Azure CosmosDB container.query_items() SQL-like queries to
+  Firestore collection.where().stream(). Maps CosmosDB SQL API queries
+  to Firestore chained where() filters.
+source_provider: azure
+target_provider: gcp
+source_service: cosmosdb
+target_service: firestore
+language: python
+construct_type: method_call
+match_pattern:
+  imports:
+    - "from azure.cosmos import CosmosClient"
+  text_patterns:
+    - "query_items"
+    - "query="
+    - "parameters="
+    - "enable_cross_partition_query"
+    - "SELECT"
+    - "FROM c WHERE"
+transform:
+  replacement_template: |
+    query = collection.where("{{field}}", "{{operator}}", {{value}})
+    results = [doc.to_dict() for doc in query.stream()]
+  import_additions:
+    - "from google.cloud import firestore"
+  import_removals:
+    - "from azure.cosmos import CosmosClient"
+  notes: >
+    CosmosDB uses SQL-like queries ("SELECT * FROM c WHERE c.field = @val");
+    Firestore uses chained where() calls with field, operator, value.
+    CosmosDB supports complex SQL (JOINs, subqueries, aggregates, UDFs);
+    Firestore where() is limited to simple field comparisons.
+    CosmosDB parameterized queries (@name) map to direct values in Firestore.
+    CosmosDB enable_cross_partition_query has no Firestore equivalent.
+    CosmosDB ORDER BY maps to Firestore order_by(); composite indexes
+    may be required in Firestore.
+    CosmosDB TOP/OFFSET maps to Firestore limit()/offset().
+    Complex CosmosDB SQL queries may need restructuring for Firestore.
+base_confidence: 0.78
+tags:
+  - cosmosdb
+  - firestore
+  - python
+  - database
+  - method-call
+  - medium-complexity
+examples:
+  - input: |
+      from azure.cosmos import CosmosClient
+
+      cosmos_client = CosmosClient(url=endpoint, credential=key)
+      database = cosmos_client.get_database_client("mydb")
+      container = database.get_container_client("orders")
+
+      items = container.query_items(
+          query="SELECT * FROM c WHERE c.status = @status AND c.total > @min_total",
+          parameters=[
+              {"name": "@status", "value": "pending"},
+              {"name": "@min_total", "value": 100}
+          ],
+          enable_cross_partition_query=True
+      )
+      for item in items:
+          print(f"Order {item['id']}: ${item['total']}")
+    output: |
+      from google.cloud import firestore
+
+      db = firestore.Client()
+      collection = db.collection("orders")
+
+      query = (
+          collection
+          .where("status", "==", "pending")
+          .where("total", ">", 100)
+      )
+      for doc in query.stream():
+          item = doc.to_dict()
+          print(f"Order {doc.id}: ${item['total']}")

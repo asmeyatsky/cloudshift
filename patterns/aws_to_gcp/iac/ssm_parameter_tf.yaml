@@ -1,0 +1,141 @@
+id: aws-ssm-parameter-to-gcp-secret-manager-tf
+name: "AWS SSM Parameter to GCP Secret Manager (Terraform)"
+description: >
+  Transforms aws_ssm_parameter to google_secret_manager_secret and
+  google_secret_manager_secret_version. AWS SSM Parameter Store parameters
+  (especially SecureString type) map to GCP Secret Manager secrets with
+  versioned values.
+source_provider: aws
+target_provider: gcp
+source_service: ssm
+target_service: secret-manager
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "aws_ssm_parameter"
+  text_patterns:
+    - "ssm_parameter"
+    - "SecureString"
+    - "String"
+    - "StringList"
+    - "parameter"
+    - "type"
+    - "value"
+transform:
+  replacement_template: |
+    resource "google_secret_manager_secret" "{{resource_name}}" {
+      secret_id = "{{parameter_name}}"
+      project   = var.project_id
+
+      replication {
+        auto {}
+      }
+
+      labels = {
+        {{labels}}
+      }
+    }
+
+    resource "google_secret_manager_secret_version" "{{resource_name}}" {
+      secret      = google_secret_manager_secret.{{resource_name}}.id
+      secret_data = {{secret_value}}
+    }
+
+    resource "google_secret_manager_secret_iam_member" "{{iam_member_name}}" {
+      project   = var.project_id
+      secret_id = google_secret_manager_secret.{{resource_name}}.secret_id
+      role      = "roles/secretmanager.secretAccessor"
+      member    = "serviceAccount:{{service_account_email}}"
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    SSM Parameter Store to Secret Manager mapping:
+      - aws_ssm_parameter type "SecureString" maps directly to Secret Manager secret.
+      - aws_ssm_parameter type "String" maps to Secret Manager (no plain-text
+        parameter store equivalent in GCP).
+      - aws_ssm_parameter type "StringList" should be split into individual secrets
+        or stored as JSON in a single secret.
+      - SSM parameter name hierarchy (/app/db/password) maps to secret_id with
+        dashes or underscores (app-db-password) since Secret Manager IDs cannot
+        contain slashes.
+      - SSM parameter ARN-based IAM maps to Secret Manager IAM bindings.
+      - SSM parameter versioning is automatic; Secret Manager also auto-versions.
+      - SSM parameter tier (Standard/Advanced) has no equivalent; Secret Manager
+        has a per-secret billing model.
+      - For non-sensitive configuration (SSM String type), consider using
+        google_runtime_config_variable or environment variables instead.
+      - SSM parameter tags map to Secret Manager labels.
+base_confidence: 0.82
+tags:
+  - ssm
+  - secret-manager
+  - parameters
+  - terraform
+  - iac
+  - resource-block
+examples:
+  - input: |
+      resource "aws_ssm_parameter" "db_password" {
+        name        = "/production/database/password"
+        description = "Database password"
+        type        = "SecureString"
+        value       = var.db_password
+        key_id      = aws_kms_key.main.arn
+
+        tags = {
+          Environment = "production"
+          Service     = "database"
+        }
+      }
+
+      resource "aws_ssm_parameter" "api_url" {
+        name        = "/production/api/url"
+        description = "API base URL"
+        type        = "String"
+        value       = "https://api.example.com"
+
+        tags = {
+          Environment = "production"
+          Service     = "api"
+        }
+      }
+    output: |
+      resource "google_secret_manager_secret" "db_password" {
+        secret_id = "production-database-password"
+        project   = var.project_id
+
+        replication {
+          auto {}
+        }
+
+        labels = {
+          environment = "production"
+          service     = "database"
+        }
+      }
+
+      resource "google_secret_manager_secret_version" "db_password" {
+        secret      = google_secret_manager_secret.db_password.id
+        secret_data = var.db_password
+      }
+
+      resource "google_secret_manager_secret" "api_url" {
+        secret_id = "production-api-url"
+        project   = var.project_id
+
+        replication {
+          auto {}
+        }
+
+        labels = {
+          environment = "production"
+          service     = "api"
+        }
+      }
+
+      resource "google_secret_manager_secret_version" "api_url" {
+        secret      = google_secret_manager_secret.api_url.id
+        secret_data = "https://api.example.com"
+      }

@@ -1,0 +1,167 @@
+id: vpc-cfn-to-compute-network-tf
+name: "VPC CloudFormation to Compute Network (Terraform)"
+description: >
+  Transforms AWS::EC2::VPC, AWS::EC2::Subnet, and AWS::EC2::SecurityGroup
+  CloudFormation resource definitions to google_compute_network,
+  google_compute_subnetwork, and google_compute_firewall Terraform resources.
+  AWS VPC networking concepts map to GCP VPC with key structural differences.
+source_provider: aws
+target_provider: gcp
+source_service: vpc
+target_service: compute-network
+language: cloudformation
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "AWS::EC2::VPC"
+    - "AWS::EC2::Subnet"
+    - "AWS::EC2::SecurityGroup"
+  text_patterns:
+    - "Type: AWS::EC2::VPC"
+    - "Type: AWS::EC2::Subnet"
+    - "Type: AWS::EC2::SecurityGroup"
+    - "CidrBlock:"
+    - "SecurityGroupIngress:"
+    - "SecurityGroupEgress:"
+transform:
+  replacement_template: |
+    resource "google_compute_network" "{{resource_name}}" {
+      name                    = "{{network_name}}"
+      project                 = var.project_id
+      auto_create_subnetworks = false
+      routing_mode            = "REGIONAL"
+    }
+
+    resource "google_compute_subnetwork" "{{subnet_name}}" {
+      name          = "{{subnet_name}}"
+      ip_cidr_range = "{{cidr_block}}"
+      region        = "{{region}}"
+      network       = google_compute_network.{{resource_name}}.id
+      project       = var.project_id
+
+      private_ip_google_access = true
+    }
+
+    resource "google_compute_firewall" "{{firewall_name}}" {
+      name    = "{{firewall_name}}"
+      network = google_compute_network.{{resource_name}}.id
+      project = var.project_id
+
+      allow {
+        protocol = "{{protocol}}"
+        ports    = [{{ports}}]
+      }
+
+      source_ranges = ["{{source_cidr}}"]
+      target_tags   = ["{{target_tag}}"]
+      direction     = "INGRESS"
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    AWS VPCs are regional with AZ-scoped subnets while GCP VPCs are global
+    with region-scoped subnets. Security Groups (stateful) map to
+    google_compute_firewall rules (which can be stateful via allow rules).
+    NACLs have no direct GCP equivalent; use firewall rules with priorities.
+    AWS route tables map to GCP routes (google_compute_route). NAT Gateways
+    map to google_compute_router_nat. Internet Gateways are implicit in GCP
+    when instances have external IPs. Elastic IPs map to
+    google_compute_address. CloudFormation intrinsic functions must be
+    converted to Terraform expressions.
+base_confidence: 0.70
+tags:
+  - vpc
+  - compute-network
+  - cloudformation
+  - terraform
+  - networking
+  - security-group
+  - firewall
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      Resources:
+        AppVPC:
+          Type: AWS::EC2::VPC
+          Properties:
+            CidrBlock: 10.0.0.0/16
+            EnableDnsSupport: true
+            EnableDnsHostnames: true
+            Tags:
+              - Key: Name
+                Value: !Sub "${AWS::StackName}-vpc"
+        PublicSubnet:
+          Type: AWS::EC2::Subnet
+          Properties:
+            VpcId: !Ref AppVPC
+            CidrBlock: 10.0.1.0/24
+            AvailabilityZone: !Select [0, !GetAZs ""]
+            MapPublicIpOnLaunch: true
+            Tags:
+              - Key: Name
+                Value: !Sub "${AWS::StackName}-public"
+        WebSecurityGroup:
+          Type: AWS::EC2::SecurityGroup
+          Properties:
+            GroupDescription: Allow HTTP/HTTPS traffic
+            VpcId: !Ref AppVPC
+            SecurityGroupIngress:
+              - IpProtocol: tcp
+                FromPort: 80
+                ToPort: 80
+                CidrIp: 0.0.0.0/0
+              - IpProtocol: tcp
+                FromPort: 443
+                ToPort: 443
+                CidrIp: 0.0.0.0/0
+            Tags:
+              - Key: Name
+                Value: !Sub "${AWS::StackName}-web-sg"
+    output: |
+      resource "google_compute_network" "app_vpc" {
+        name                    = "${var.project_name}-vpc"
+        project                 = var.project_id
+        auto_create_subnetworks = false
+        routing_mode            = "REGIONAL"
+      }
+
+      resource "google_compute_subnetwork" "public_subnet" {
+        name          = "${var.project_name}-public"
+        ip_cidr_range = "10.0.1.0/24"
+        region        = var.region
+        network       = google_compute_network.app_vpc.id
+        project       = var.project_id
+
+        private_ip_google_access = true
+      }
+
+      resource "google_compute_firewall" "web_security_group_http" {
+        name    = "${var.project_name}-allow-http"
+        network = google_compute_network.app_vpc.id
+        project = var.project_id
+
+        allow {
+          protocol = "tcp"
+          ports    = ["80"]
+        }
+
+        source_ranges = ["0.0.0.0/0"]
+        target_tags   = ["web"]
+        direction     = "INGRESS"
+      }
+
+      resource "google_compute_firewall" "web_security_group_https" {
+        name    = "${var.project_name}-allow-https"
+        network = google_compute_network.app_vpc.id
+        project = var.project_id
+
+        allow {
+          protocol = "tcp"
+          ports    = ["443"]
+        }
+
+        source_ranges = ["0.0.0.0/0"]
+        target_tags   = ["web"]
+        direction     = "INGRESS"
+      }

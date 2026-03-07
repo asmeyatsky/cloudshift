@@ -1,0 +1,155 @@
+id: ec2-cfn-to-compute-instance-tf
+name: "EC2 Instance CloudFormation to Compute Engine (Terraform)"
+description: >
+  Transforms an AWS::EC2::Instance CloudFormation resource definition to a
+  google_compute_instance Terraform resource. EC2 instance types, AMIs, and
+  configuration map to GCE machine types, images, and equivalent settings.
+source_provider: aws
+target_provider: gcp
+source_service: ec2
+target_service: compute-engine
+language: cloudformation
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "AWS::EC2::Instance"
+  text_patterns:
+    - "Type: AWS::EC2::Instance"
+    - "InstanceType:"
+    - "ImageId:"
+    - "KeyName:"
+    - "SecurityGroupIds:"
+    - "UserData:"
+transform:
+  replacement_template: |
+    resource "google_compute_instance" "{{resource_name}}" {
+      name         = "{{instance_name}}"
+      machine_type = "{{machine_type}}"
+      zone         = "{{zone}}"
+      project      = var.project_id
+
+      boot_disk {
+        initialize_params {
+          image = "{{image}}"
+          size  = {{disk_size}}
+          type  = "pd-ssd"
+        }
+      }
+
+      network_interface {
+        network    = google_compute_network.{{network_name}}.id
+        subnetwork = google_compute_subnetwork.{{subnet_name}}.id
+
+        access_config {
+          # Ephemeral public IP (omit for private-only)
+        }
+      }
+
+      metadata_startup_script = <<-EOF
+        {{startup_script}}
+      EOF
+
+      service_account {
+        email  = google_service_account.{{sa_name}}.email
+        scopes = ["cloud-platform"]
+      }
+
+      tags = [{{network_tags}}]
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    EC2 instance types map to GCE machine types (e.g., t3.medium maps roughly
+    to e2-medium, m5.xlarge to n2-standard-4). AMI IDs must be replaced with
+    GCE image families (e.g., debian-11, ubuntu-2204-lts). EC2 key pairs map
+    to OS Login or metadata-based SSH keys. UserData maps to
+    metadata_startup_script. Security groups map to network tags combined
+    with firewall rules. IAM instance profiles map to service accounts.
+    EBS volumes map to google_compute_disk. CloudFormation intrinsic functions
+    must be converted to Terraform expressions.
+base_confidence: 0.72
+tags:
+  - ec2
+  - compute-engine
+  - cloudformation
+  - terraform
+  - compute
+  - virtual-machine
+  - resource-block
+  - high-complexity
+examples:
+  - input: |
+      Resources:
+        WebServer:
+          Type: AWS::EC2::Instance
+          Properties:
+            InstanceType: t3.large
+            ImageId: ami-0c55b159cbfafe1f0
+            KeyName: !Ref KeyPair
+            SubnetId: !Ref PublicSubnet
+            SecurityGroupIds:
+              - !Ref WebSecurityGroup
+            IamInstanceProfile: !Ref WebInstanceProfile
+            BlockDeviceMappings:
+              - DeviceName: /dev/xvda
+                Ebs:
+                  VolumeSize: 50
+                  VolumeType: gp3
+            UserData:
+              Fn::Base64: !Sub |
+                #!/bin/bash
+                yum update -y
+                yum install -y httpd
+                systemctl start httpd
+            Tags:
+              - Key: Name
+                Value: !Sub "${AWS::StackName}-web"
+              - Key: Environment
+                Value: !Ref Environment
+    output: |
+      resource "google_compute_instance" "web_server" {
+        name         = "${var.project_name}-web"
+        machine_type = "e2-standard-2"
+        zone         = "${var.region}-a"
+        project      = var.project_id
+
+        boot_disk {
+          initialize_params {
+            image = "projects/centos-cloud/global/images/family/centos-stream-9"
+            size  = 50
+            type  = "pd-ssd"
+          }
+        }
+
+        network_interface {
+          network    = google_compute_network.app_vpc.id
+          subnetwork = google_compute_subnetwork.public_subnet.id
+
+          access_config {
+            # Ephemeral public IP
+          }
+        }
+
+        metadata_startup_script = <<-EOF
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+        EOF
+
+        service_account {
+          email  = google_service_account.web_instance_profile.email
+          scopes = ["cloud-platform"]
+        }
+
+        tags = ["web", "http-server", "https-server"]
+
+        labels = {
+          name        = "${var.project_name}-web"
+          environment = var.environment
+        }
+      }

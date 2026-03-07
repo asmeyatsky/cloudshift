@@ -1,0 +1,71 @@
+id: aws-gcp-dynamodb-put-item-ts
+name: "DynamoDB PutItem to Firestore Document Set"
+description: >
+  Transforms AWS DynamoDB PutItemCommand calls to Google Cloud Firestore
+  collection().doc().set() calls in TypeScript. Maps DynamoDB table and
+  item parameters to Firestore collection and document references.
+source_provider: aws
+target_provider: gcp
+source_service: dynamodb
+target_service: firestore
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { PutItemCommand } from '@aws-sdk/client-dynamodb'"
+  client_names:
+    - "new PutItemCommand"
+  text_patterns:
+    - "PutItemCommand"
+    - ".send(putItem"
+transform:
+  replacement_template: |
+    const firestore = new Firestore();
+    await firestore.collection(tableName).doc(docId).set(item);
+  import_additions:
+    - "import { Firestore } from '@google-cloud/firestore'"
+  import_removals:
+    - "import { PutItemCommand } from '@aws-sdk/client-dynamodb'"
+  notes: >
+    DynamoDB PutItemCommand uses TableName and Item with typed attribute values
+    (e.g., { S: 'value', N: '123' }). Firestore set() accepts plain JavaScript
+    objects directly. DynamoDB attribute marshalling/unmarshalling must be removed.
+    Firestore uses collection/document hierarchy rather than table/item.
+base_confidence: 0.80
+tags:
+  - database
+  - dynamodb
+  - firestore
+  - put
+  - write
+  - typescript
+examples:
+  - input: |
+      import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
+
+      const dynamo = new DynamoDBClient({ region: 'us-east-1' });
+
+      async function createUser(id: string, name: string, email: string): Promise<void> {
+        const command = new PutItemCommand({
+          TableName: 'Users',
+          Item: {
+            id: { S: id },
+            name: { S: name },
+            email: { S: email },
+            createdAt: { N: String(Date.now()) },
+          },
+        });
+        await dynamo.send(command);
+      }
+    output: |
+      import { Firestore } from '@google-cloud/firestore';
+
+      const firestore = new Firestore();
+
+      async function createUser(id: string, name: string, email: string): Promise<void> {
+        await firestore.collection('Users').doc(id).set({
+          name: name,
+          email: email,
+          createdAt: Date.now(),
+        });
+      }

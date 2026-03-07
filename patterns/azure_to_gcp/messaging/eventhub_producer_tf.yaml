@@ -1,0 +1,145 @@
+id: azure-eventhub-producer-to-pubsub-tf
+name: "Azure Event Hub Namespace + Hub to Pub/Sub Topic (Terraform)"
+description: >
+  Transforms azurerm_eventhub_namespace and azurerm_eventhub to
+  google_pubsub_topic. Maps Event Hub namespace capacity and hub
+  partition/retention settings to Pub/Sub topic configuration.
+source_provider: azure
+target_provider: gcp
+source_service: event-hubs
+target_service: pubsub
+language: hcl
+construct_type: resource_block
+match_pattern:
+  resource_types:
+    - "azurerm_eventhub_namespace"
+    - "azurerm_eventhub"
+  text_patterns:
+    - "eventhub_namespace"
+    - "eventhub"
+    - "partition_count"
+    - "message_retention"
+    - "capacity"
+    - "sku"
+    - "auto_inflate_enabled"
+    - "maximum_throughput_units"
+transform:
+  replacement_template: |
+    resource "google_pubsub_topic" "{{resource_name}}" {
+      name    = "{{topic_name}}"
+      project = var.project_id
+
+      message_retention_duration = "{{retention_duration}}"
+
+      labels = {
+        {{labels}}
+      }
+    }
+  import_additions: []
+  import_removals: []
+  notes: >
+    Azure Event Hub Namespace is a grouping/capacity container;
+    no direct Pub/Sub equivalent is needed.
+    Azure Event Hub maps to google_pubsub_topic.
+    Azure partition_count controls parallelism; Pub/Sub partitioning
+    is automatic and not user-configurable.
+    Azure message_retention (1-7 days, up to 90 for Premium) maps to
+    Pub/Sub message_retention_duration (up to 31 days).
+    Azure throughput_units / capacity control throughput; Pub/Sub
+    auto-scales with no explicit capacity configuration.
+    Azure auto_inflate_enabled (auto-scaling TUs) is not needed in
+    Pub/Sub (always auto-scales).
+    Azure Event Hub Capture (to Blob/ADLS) maps to Pub/Sub BigQuery
+    subscription or Dataflow pipeline to GCS.
+    Azure Event Hub Kafka endpoint has no Pub/Sub equivalent;
+    consider Confluent Cloud or Managed Kafka on GCP.
+    Azure namespace-level shared access policies map to Pub/Sub
+    topic/subscription IAM bindings.
+base_confidence: 0.75
+tags:
+  - event-hubs
+  - pubsub
+  - terraform
+  - messaging
+  - resource-block
+  - medium-complexity
+examples:
+  - input: |
+      resource "azurerm_eventhub_namespace" "main" {
+        name                     = "myapp-eventhubs"
+        location                 = azurerm_resource_group.main.location
+        resource_group_name      = azurerm_resource_group.main.name
+        sku                      = "Standard"
+        capacity                 = 2
+        auto_inflate_enabled     = true
+        maximum_throughput_units = 10
+
+        tags = {
+          Environment = "production"
+        }
+      }
+
+      resource "azurerm_eventhub" "clickstream" {
+        name                = "clickstream-events"
+        namespace_name      = azurerm_eventhub_namespace.main.name
+        resource_group_name = azurerm_resource_group.main.name
+        partition_count     = 8
+        message_retention   = 7
+      }
+
+      resource "azurerm_eventhub" "telemetry" {
+        name                = "telemetry-events"
+        namespace_name      = azurerm_eventhub_namespace.main.name
+        resource_group_name = azurerm_resource_group.main.name
+        partition_count     = 4
+        message_retention   = 3
+      }
+    output: |
+      resource "google_pubsub_topic" "clickstream" {
+        name    = "clickstream-events"
+        project = var.project_id
+
+        message_retention_duration = "604800s"
+
+        labels = {
+          environment = "production"
+        }
+      }
+
+      resource "google_pubsub_topic" "telemetry" {
+        name    = "telemetry-events"
+        project = var.project_id
+
+        message_retention_duration = "259200s"
+
+        labels = {
+          environment = "production"
+        }
+      }
+
+      # Subscriptions for consumers (one per consumer group equivalent)
+      resource "google_pubsub_subscription" "clickstream_default" {
+        name    = "clickstream-events-default"
+        topic   = google_pubsub_topic.clickstream.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "604800s"
+
+        expiration_policy {
+          ttl = ""
+        }
+      }
+
+      resource "google_pubsub_subscription" "telemetry_default" {
+        name    = "telemetry-events-default"
+        topic   = google_pubsub_topic.telemetry.id
+        project = var.project_id
+
+        ack_deadline_seconds       = 60
+        message_retention_duration = "259200s"
+
+        expiration_policy {
+          ttl = ""
+        }
+      }

@@ -1,0 +1,63 @@
+id: aws-gcp-s3-delete-object-ts
+name: "S3 DeleteObject to GCS File Delete"
+description: >
+  Transforms AWS S3 DeleteObjectCommand calls to Google Cloud Storage
+  bucket().file().delete() calls in TypeScript. Maps S3 bucket and key
+  parameters to GCS bucket and file references.
+source_provider: aws
+target_provider: gcp
+source_service: s3
+target_service: cloud-storage
+language: typescript
+construct_type: method_call
+match_pattern:
+  imports:
+    - "import { DeleteObjectCommand } from '@aws-sdk/client-s3'"
+  client_names:
+    - "new DeleteObjectCommand"
+  text_patterns:
+    - "DeleteObjectCommand"
+    - ".send(deleteObject"
+transform:
+  replacement_template: |
+    const storage = new Storage();
+    await storage.bucket(bucketName).file(key).delete();
+  import_additions:
+    - "import { Storage } from '@google-cloud/storage'"
+  import_removals:
+    - "import { DeleteObjectCommand } from '@aws-sdk/client-s3'"
+  notes: >
+    S3 DeleteObjectCommand takes Bucket and Key parameters. GCS uses
+    storage.bucket(name).file(key).delete(). The delete() method returns
+    a promise that resolves when the file is deleted. VersionId-based
+    deletion requires generation numbers in GCS.
+base_confidence: 0.85
+tags:
+  - storage
+  - s3
+  - gcs
+  - delete
+  - typescript
+examples:
+  - input: |
+      import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+
+      const s3 = new S3Client({ region: 'us-east-1' });
+
+      async function deleteFile(bucket: string, key: string): Promise<void> {
+        const command = new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: key,
+        });
+        await s3.send(command);
+        console.log(`Deleted ${key} from ${bucket}`);
+      }
+    output: |
+      import { Storage } from '@google-cloud/storage';
+
+      const storage = new Storage();
+
+      async function deleteFile(bucket: string, key: string): Promise<void> {
+        await storage.bucket(bucket).file(key).delete();
+        console.log(`Deleted ${key} from ${bucket}`);
+      }

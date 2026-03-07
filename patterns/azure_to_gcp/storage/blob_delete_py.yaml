@@ -1,0 +1,73 @@
+id: azure-blob-delete-to-gcs-delete-py
+name: "Azure Blob delete_blob to GCS blob.delete (Python)"
+description: >
+  Transforms Azure Blob Storage delete_blob calls to GCS blob.delete().
+  Maps container/blob deletion patterns to bucket/blob deletion patterns
+  including soft-delete and snapshot handling.
+source_provider: azure
+target_provider: gcp
+source_service: blob-storage
+target_service: cloud-storage
+language: python
+construct_type: method_call
+match_pattern:
+  imports:
+    - "from azure.storage.blob import BlobServiceClient"
+    - "from azure.storage.blob import BlobClient"
+    - "from azure.storage.blob import ContainerClient"
+  text_patterns:
+    - "delete_blob"
+    - "blob_client"
+    - "container_client"
+    - "delete_blobs"
+transform:
+  replacement_template: |
+    bucket = storage_client.bucket("{{bucket_name}}")
+    blob = bucket.blob("{{blob_name}}")
+    blob.delete()
+  import_additions:
+    - "from google.cloud import storage"
+  import_removals:
+    - "from azure.storage.blob import BlobServiceClient"
+    - "from azure.storage.blob import BlobClient"
+  notes: >
+    Azure delete_blob() maps directly to GCS blob.delete().
+    Azure delete_blobs (batch delete) requires iterating and calling
+    blob.delete() individually in GCS, or using client.batch() context.
+    Azure soft-delete (with undelete) maps to GCS object versioning
+    and lifecycle rules; no direct undelete in GCS.
+    Azure delete_blob(delete_snapshots="include") has no direct GCS
+    equivalent; GCS uses generation numbers for versioned objects.
+    Azure lease-based deletion has no GCS equivalent.
+base_confidence: 0.88
+tags:
+  - azure-blob
+  - cloud-storage
+  - python
+  - storage
+  - method-call
+  - low-complexity
+examples:
+  - input: |
+      from azure.storage.blob import BlobServiceClient
+
+      blob_service = BlobServiceClient.from_connection_string(conn_str)
+      blob_client = blob_service.get_blob_client(
+          container="my-container",
+          blob="data/old-file.json"
+      )
+      blob_client.delete_blob()
+    output: |
+      from google.cloud import storage
+
+      storage_client = storage.Client()
+      bucket = storage_client.bucket("my-container")
+      blob = bucket.blob("data/old-file.json")
+      blob.delete()
+  - input: |
+      container_client = blob_service.get_container_client("uploads")
+      container_client.delete_blob("temp/upload.tmp", delete_snapshots="include")
+    output: |
+      bucket = storage_client.bucket("uploads")
+      blob = bucket.blob("temp/upload.tmp")
+      blob.delete()
