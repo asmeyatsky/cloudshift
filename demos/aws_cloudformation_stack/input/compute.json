@@ -1,0 +1,134 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Lambda functions with API Gateway and DynamoDB integration",
+  "Resources": {
+    "ApiFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "api-handler",
+        "Runtime": "python3.12",
+        "Handler": "handler.main",
+        "Code": {
+          "S3Bucket": "deployment-artifacts",
+          "S3Key": "lambda/api-handler.zip"
+        },
+        "MemorySize": 512,
+        "Timeout": 30,
+        "Environment": {
+          "Variables": {
+            "TABLE_NAME": { "Ref": "UsersTable" },
+            "BUCKET_NAME": "myapp-data-bucket",
+            "QUEUE_URL": { "Ref": "ProcessingQueue" }
+          }
+        },
+        "Role": { "Fn::GetAtt": ["LambdaExecutionRole", "Arn"] },
+        "Tags": [
+          { "Key": "Environment", "Value": "production" }
+        ]
+      }
+    },
+    "WorkerFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "queue-worker",
+        "Runtime": "python3.12",
+        "Handler": "worker.process",
+        "Code": {
+          "S3Bucket": "deployment-artifacts",
+          "S3Key": "lambda/queue-worker.zip"
+        },
+        "MemorySize": 256,
+        "Timeout": 60,
+        "ReservedConcurrentExecutions": 10,
+        "Environment": {
+          "Variables": {
+            "TABLE_NAME": { "Ref": "UsersTable" },
+            "SNS_TOPIC_ARN": { "Ref": "NotificationTopic" }
+          }
+        },
+        "Role": { "Fn::GetAtt": ["LambdaExecutionRole", "Arn"] }
+      }
+    },
+    "UsersTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "TableName": "users",
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          { "AttributeName": "id", "AttributeType": "S" },
+          { "AttributeName": "email", "AttributeType": "S" }
+        ],
+        "KeySchema": [
+          { "AttributeName": "id", "KeyType": "HASH" }
+        ],
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "email-index",
+            "KeySchema": [
+              { "AttributeName": "email", "KeyType": "HASH" }
+            ],
+            "Projection": { "ProjectionType": "ALL" }
+          }
+        ]
+      }
+    },
+    "ProcessingQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": "processing-queue",
+        "VisibilityTimeout": 60,
+        "MessageRetentionPeriod": 1209600,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": { "Fn::GetAtt": ["DeadLetterQueue", "Arn"] },
+          "maxReceiveCount": 3
+        }
+      }
+    },
+    "DeadLetterQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": "processing-dlq",
+        "MessageRetentionPeriod": 1209600
+      }
+    },
+    "NotificationTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": "notifications",
+        "Subscription": [
+          {
+            "Protocol": "email",
+            "Endpoint": "ops@example.com"
+          }
+        ]
+      }
+    },
+    "LambdaExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "lambda-execution-role",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": "lambda.amazonaws.com" },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "ApiFunctionArn": {
+      "Value": { "Fn::GetAtt": ["ApiFunction", "Arn"] }
+    },
+    "QueueUrl": {
+      "Value": { "Ref": "ProcessingQueue" }
+    }
+  }
+}

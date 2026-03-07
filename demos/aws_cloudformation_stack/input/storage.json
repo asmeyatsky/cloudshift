@@ -1,0 +1,101 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "S3 buckets for application data, logs, and static assets",
+  "Resources": {
+    "DataBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "myapp-data-bucket",
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "aws:kms",
+                "KMSMasterKeyID": { "Ref": "DataEncryptionKey" }
+              }
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "ArchiveOldData",
+              "Status": "Enabled",
+              "Transitions": [
+                { "TransitionInDays": 90, "StorageClass": "GLACIER" }
+              ]
+            }
+          ]
+        },
+        "Tags": [
+          { "Key": "Environment", "Value": "production" }
+        ]
+      }
+    },
+    "LogsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "myapp-logs-bucket",
+        "AccessControl": "LogDeliveryWrite",
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "DeleteOldLogs",
+              "Status": "Enabled",
+              "ExpirationInDays": 365
+            }
+          ]
+        }
+      }
+    },
+    "StaticAssetsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "myapp-static-assets",
+        "WebsiteConfiguration": {
+          "IndexDocument": "index.html",
+          "ErrorDocument": "error.html"
+        },
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedOrigins": ["*"],
+              "AllowedMethods": ["GET"],
+              "AllowedHeaders": ["*"]
+            }
+          ]
+        }
+      }
+    },
+    "DataEncryptionKey": {
+      "Type": "AWS::KMS::Key",
+      "Properties": {
+        "Description": "KMS key for data bucket encryption",
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "AWS": { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:root" } },
+              "Action": "kms:*",
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "DataBucketArn": {
+      "Value": { "Fn::GetAtt": ["DataBucket", "Arn"] },
+      "Description": "ARN of the data bucket"
+    },
+    "LogsBucketArn": {
+      "Value": { "Fn::GetAtt": ["LogsBucket", "Arn"] },
+      "Description": "ARN of the logs bucket"
+    }
+  }
+}
