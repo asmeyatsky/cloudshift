@@ -37,7 +37,7 @@ class RustPatternEngineAdapter:
 
     def load_patterns(self, patterns_dir: str) -> int:
         """Load pattern rules into the Rust global catalogue."""
-        count = core.load_patterns(patterns_dir)
+        count = core.py_load_patterns(patterns_dir)
         self._loaded = True
         return count
 
@@ -54,7 +54,7 @@ class RustPatternEngineAdapter:
 
         for node_dict in constructs:
             for pattern in patterns:
-                result = core.match_and_transform(
+                result = core.py_match_and_transform(
                     node_dict["node_type"],
                     node_dict["name"],
                     node_dict["text"],
@@ -83,7 +83,7 @@ class RustPatternEngineAdapter:
         modified = source
 
         for node_dict in constructs:
-            result = core.match_and_transform(
+            result = core.py_match_and_transform(
                 node_dict["node_type"],
                 node_dict["name"],
                 node_dict["text"],
@@ -109,7 +109,7 @@ class RustPatternEngineAdapter:
         metadata: dict[str, str] | None = None,
     ) -> dict | None:
         """Raw single-node match+transform (convenience, not part of the port)."""
-        result = core.match_and_transform(
+        result = core.py_match_and_transform(
             node_type, node_name, node_text,
             provider, service, language,
             metadata or {},

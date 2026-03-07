@@ -149,6 +149,62 @@ class Container:
             )
         return NullLLMAdapter()
 
+    # -- Use case resolution ------------------------------------------------
+
+    def resolve(self, use_case_cls):
+        """Instantiate a use case class with the correct adapters."""
+        from cloudshift.application.use_cases import (
+            ApplyTransformationUseCase,
+            GeneratePlanUseCase,
+            GenerateReportUseCase,
+            ManagePatternsUseCase,
+            ScanProjectUseCase,
+            ValidateTransformationUseCase,
+        )
+
+        factories = {
+            ScanProjectUseCase: lambda: ScanProjectUseCase(
+                fs=self.file_system,
+                parser=self.parser,
+                detector=self.detector,
+            ),
+            GeneratePlanUseCase: lambda: GeneratePlanUseCase(
+                pattern_engine=self.pattern_engine,
+                manifest_store=self.project_repository,
+            ),
+            ApplyTransformationUseCase: lambda: ApplyTransformationUseCase(
+                plan_store=self.project_repository,
+                pattern_engine=self.pattern_engine,
+                fs=self.file_system,
+                diff_engine=self.diff,
+            ),
+            ValidateTransformationUseCase: lambda: ValidateTransformationUseCase(
+                ast_validator=self.validation,
+                residual_scanner=self.validation,
+                sdk_checker=self.validation,
+                test_runner=self.test_runner,
+                transform_store=self.project_repository,
+            ),
+            ManagePatternsUseCase: lambda: ManagePatternsUseCase(
+                pattern_store=self.pattern_store,
+            ),
+            GenerateReportUseCase: lambda: GenerateReportUseCase(
+                project_store=self.project_repository,
+                scan_store=self.project_repository,
+                transform_store=self.project_repository,
+                validation_store=self.project_repository,
+            ),
+        }
+
+        factory = factories.get(use_case_cls)
+        if factory is None:
+            raise ValueError(f"Unknown use case: {use_case_cls.__name__}")
+        return factory()
+
+    def config(self):
+        """Return a config accessor wrapping Settings."""
+        return _ConfigAccessor(self._settings)
+
     # -- Internal helpers ---------------------------------------------------
 
     def _get_or_create(self, key: str, factory):
@@ -166,3 +222,28 @@ class Container:
             repo = self._instances["project_repository"]
             if hasattr(repo, "close"):
                 repo.close()
+
+
+class _ConfigAccessor:
+    """Simple config accessor wrapping Settings for CLI config commands."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    def get(self, key: str):
+        return getattr(self._settings, key, None)
+
+    def set(self, key: str, value: str) -> None:
+        if hasattr(self._settings, key):
+            field_type = type(getattr(self._settings, key))
+            if field_type is bool:
+                setattr(self._settings, key, value.lower() in ("true", "1", "yes"))
+            elif field_type is int:
+                setattr(self._settings, key, int(value))
+            elif field_type is float:
+                setattr(self._settings, key, float(value))
+            else:
+                setattr(self._settings, key, value)
+
+    def as_dict(self) -> dict:
+        return self._settings.model_dump(mode="json")

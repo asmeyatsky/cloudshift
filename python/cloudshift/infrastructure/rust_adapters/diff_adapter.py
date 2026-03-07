@@ -17,7 +17,7 @@ class RustDiffAdapter:
     """
 
     def compute_diff(self, original: str, modified: str) -> list[DiffHunk]:
-        raw = core.unified_diff(original, modified, "<diff>")
+        raw = core.py_unified_diff(original, modified, "<diff>")
         if not raw.strip():
             return []
         return self._parse_unified_diff(raw, original, modified)
@@ -34,7 +34,7 @@ class RustDiffAdapter:
 
     def unified_diff(self, old_text: str, new_text: str, file_path: str) -> str:
         """Raw unified diff string (convenience, not part of the port)."""
-        return core.unified_diff(old_text, new_text, file_path)
+        return core.py_unified_diff(old_text, new_text, file_path)
 
     def ast_diff(
         self,
@@ -45,7 +45,7 @@ class RustDiffAdapter:
         """Structural AST diff (convenience, not part of the port)."""
         py_old = [_dict_to_py_node(n) for n in old_nodes]
         py_new = [_dict_to_py_node(n) for n in new_nodes]
-        return core.ast_diff(py_old, py_new, file_path)
+        return core.py_ast_diff(py_old, py_new, file_path)
 
     @staticmethod
     def _parse_unified_diff(raw: str, original: str, modified: str) -> list[DiffHunk]:

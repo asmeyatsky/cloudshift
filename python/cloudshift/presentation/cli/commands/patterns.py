@@ -32,17 +32,26 @@ def list_(
 ) -> None:
     """List available migration patterns."""
     use_case = _use_case()
-    patterns = asyncio.run(use_case.list_patterns(source=source, target=target, language=language))
+    all_patterns = asyncio.run(use_case.list_patterns())
+
+    # Client-side filtering
+    filtered = all_patterns
+    if source is not None:
+        filtered = [p for p in filtered if p.source_provider == source]
+    if target is not None:
+        filtered = [p for p in filtered if p.target_provider == target]
+    if language is not None:
+        filtered = [p for p in filtered if p.language == language]
 
     if json_output:
         import json as _json
 
-        console.print_json(_json.dumps([p.model_dump(mode="json") for p in patterns]))
+        console.print_json(_json.dumps([p.model_dump(mode="json") for p in filtered]))
     else:
-        if not patterns:
+        if not filtered:
             console.print("[dim]No patterns found.[/dim]")
             raise typer.Exit(code=0)
-        console.print(pattern_table(patterns))
+        console.print(pattern_table(filtered))
 
     raise typer.Exit(code=0)
 
@@ -85,16 +94,22 @@ def search(
 ) -> None:
     """Search patterns by keyword."""
     use_case = _use_case()
-    patterns = asyncio.run(use_case.search_patterns(query=query, source=source, target=target))
+    results = asyncio.run(use_case.search_patterns(query=query))
+
+    # Client-side filtering
+    if source is not None:
+        results = [p for p in results if p.source_provider == source]
+    if target is not None:
+        results = [p for p in results if p.target_provider == target]
 
     if json_output:
         import json as _json
 
-        console.print_json(_json.dumps([p.model_dump(mode="json") for p in patterns]))
+        console.print_json(_json.dumps([p.model_dump(mode="json") for p in results]))
     else:
-        if not patterns:
+        if not results:
             console.print(f"[dim]No patterns matching '{query}'.[/dim]")
             raise typer.Exit(code=0)
-        console.print(pattern_table(patterns))
+        console.print(pattern_table(results))
 
     raise typer.Exit(code=0)

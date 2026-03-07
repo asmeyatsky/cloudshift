@@ -601,6 +601,32 @@ class TestManagePatternsUseCase:
 
         assert len(result) == 2
 
+    @pytest.mark.asyncio
+    async def test_call_with_async_store_method(self):
+        """Cover line 34: awaiting an async method on the store."""
+        store = AsyncMock()
+        store.list_all.return_value = []
+        uc = ManagePatternsUseCase(store)
+        result = await uc.list_patterns()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_search_patterns_with_object_patterns(self):
+        """Cover line 59: getattr branch for non-dict patterns."""
+        obj = SimpleNamespace(
+            id="p1", pattern_id="p1", name="S3->GCS",
+            description="Migrate S3", source_provider=CloudProvider.AWS,
+            target_provider=CloudProvider.GCP, language=Language.PYTHON,
+            source_snippet="", target_snippet="", tags=[], confidence=0.9,
+            base_confidence=0.9, version="1.0",
+        )
+        store = MagicMock()
+        store.list_all.return_value = [obj]
+        uc = ManagePatternsUseCase(store)
+        result = await uc.search_patterns(query="s3")
+        assert len(result) == 1
+        assert result[0].name == "S3->GCS"
+
 
 # ===================================================================
 # 6. GenerateReportUseCase
@@ -996,3 +1022,49 @@ class TestEventDispatcher:
         dispatcher.publish_sync({"type": "Evt", "val": 1})
 
         assert len(received) == 1
+
+    @pytest.mark.asyncio
+    async def test_sync_handler_exception_during_publish(self):
+        """Cover line 76-77: sync handler raises during async publish."""
+        dispatcher = EventDispatcher()
+
+        def bad_handler(event):
+            raise ValueError("boom")
+
+        dispatcher.subscribe("Evt", bad_handler)
+        # Should not raise — error is logged
+        await dispatcher.publish({"type": "Evt"})
+
+    @pytest.mark.asyncio
+    async def test_async_handler_exception_during_publish(self):
+        """Cover line 83: async handler raises, caught by gather."""
+        dispatcher = EventDispatcher()
+
+        async def bad_handler(event):
+            raise RuntimeError("async boom")
+
+        dispatcher.subscribe("Evt", bad_handler)
+        # Should not raise — error is logged
+        await dispatcher.publish({"type": "Evt"})
+
+    def test_publish_sync_with_async_handler(self):
+        """Cover lines 94-96: async handler skipped during sync publish."""
+        dispatcher = EventDispatcher()
+
+        async def async_handler(event):
+            pass  # pragma: no cover
+
+        dispatcher.subscribe("Evt", async_handler)
+        # Should not raise — async handler is skipped with a warning
+        dispatcher.publish_sync({"type": "Evt"})
+
+    def test_publish_sync_handler_exception(self):
+        """Cover lines 97-98: handler raises during sync publish."""
+        dispatcher = EventDispatcher()
+
+        def bad_handler(event):
+            raise ValueError("sync boom")
+
+        dispatcher.subscribe("Evt", bad_handler)
+        # Should not raise — error is logged
+        dispatcher.publish_sync({"type": "Evt"})

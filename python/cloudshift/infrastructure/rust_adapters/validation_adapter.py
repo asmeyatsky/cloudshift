@@ -57,7 +57,7 @@ class RustValidationAdapter:
             )
             py_old = [_dict_to_py_node(c) for c in old_constructs]
             py_new = [_dict_to_py_node(c) for c in new_constructs]
-            equiv = core.check_ast_equivalence(py_old, py_new, transformation.file_path)
+            equiv = core.py_check_ast_equivalence(py_old, py_new, transformation.file_path)
             for issue_dict in equiv.issues:
                 sev = _severity_from_str(issue_dict.get("severity", "warning"))
                 report.add_issue(ValidationIssue(
@@ -76,7 +76,7 @@ class RustValidationAdapter:
             ))
 
         # Residual reference scan
-        residual = core.scan_residual_refs(
+        residual = core.py_scan_residual_refs(
             transformation.transformed_text, transformation.file_path,
         )
         for issue_dict in residual.issues:
@@ -108,7 +108,7 @@ class RustValidationAdapter:
     ) -> dict:
         py_old = [_dict_to_py_node(n) for n in old_nodes]
         py_new = [_dict_to_py_node(n) for n in new_nodes]
-        result = core.check_ast_equivalence(py_old, py_new, file_path)
+        result = core.py_check_ast_equivalence(py_old, py_new, file_path)
         return {
             "is_valid": result.is_valid,
             "issues": list(result.issues),
@@ -116,7 +116,7 @@ class RustValidationAdapter:
         }
 
     def scan_residual_refs_raw(self, source: str, file_path: str) -> dict:
-        result = core.scan_residual_refs(source, file_path)
+        result = core.py_scan_residual_refs(source, file_path)
         return {
             "is_valid": result.is_valid,
             "issues": list(result.issues),

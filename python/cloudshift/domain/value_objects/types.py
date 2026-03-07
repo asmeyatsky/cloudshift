@@ -10,17 +10,17 @@ from enum import Enum, auto
 # Enums
 # ---------------------------------------------------------------------------
 
-class CloudProvider(Enum):
-    AWS = auto()
-    AZURE = auto()
-    GCP = auto()
+class CloudProvider(str, Enum):
+    AWS = "AWS"
+    AZURE = "AZURE"
+    GCP = "GCP"
 
 
-class Language(Enum):
-    PYTHON = auto()
-    TYPESCRIPT = auto()
-    HCL = auto()
-    CLOUDFORMATION = auto()
+class Language(str, Enum):
+    PYTHON = "PYTHON"
+    TYPESCRIPT = "TYPESCRIPT"
+    HCL = "HCL"
+    CLOUDFORMATION = "CLOUDFORMATION"
 
 
 class TransformationStatus(Enum):
@@ -42,11 +42,11 @@ class ProjectStatus(Enum):
     FAILED = auto()
 
 
-class Severity(Enum):
-    INFO = auto()
-    WARNING = auto()
-    ERROR = auto()
-    CRITICAL = auto()
+class Severity(str, Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
 
 
 # ---------------------------------------------------------------------------

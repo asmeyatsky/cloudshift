@@ -54,7 +54,7 @@ class RustDetectorAdapter:
         parser = self._get_parser()
         constructs = parser.extract_constructs(source, language)
         py_nodes = [_dict_to_py_node(c) for c in constructs]
-        detections = core.detect_services(py_nodes)
+        detections = core.py_detect_services(py_nodes)
         return [
             (d.service, d.start_line, d.end_line) for d in detections
         ]
@@ -69,7 +69,7 @@ class RustDetectorAdapter:
                     parser = self._get_parser()
                     constructs = parser.extract_constructs(source, lang)
                     py_nodes = [_dict_to_py_node(c) for c in constructs]
-                    detections = core.detect_services(py_nodes)
+                    detections = core.py_detect_services(py_nodes)
                     if detections:
                         return _PROVIDER_KEYWORDS.get(detections[0].provider)
             except Exception:
@@ -81,7 +81,7 @@ class RustDetectorAdapter:
     ) -> list[dict]:
         """Return full detection dicts (convenience, not part of the port)."""
         py_nodes = [_dict_to_py_node(n) for n in nodes]
-        detections = core.detect_services(py_nodes)
+        detections = core.py_detect_services(py_nodes)
         return [
             {
                 "provider": d.provider,

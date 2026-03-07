@@ -54,22 +54,22 @@ class RustParserAdapter:
 
     def parse(self, source: str, language: Language) -> dict[str, Any]:
         lang_str = _LANG_MAP.get(language, language.name.lower())
-        py_ast = core.parse_source(source, lang_str, "<inline>")
+        py_ast = core.py_parse_source(source, lang_str, "<inline>")
         return _py_ast_to_dict(py_ast)
 
     def extract_constructs(
         self, source: str, language: Language,
     ) -> list[dict[str, Any]]:
         lang_str = _LANG_MAP.get(language, language.name.lower())
-        py_ast = core.parse_source(source, lang_str, "<inline>")
+        py_ast = core.py_parse_source(source, lang_str, "<inline>")
         return [_py_node_to_dict(n) for n in py_ast.nodes]
 
     def parse_file(self, path: str) -> dict[str, Any]:
         """Parse a file on disk (convenience, not part of the port)."""
-        py_ast = core.parse_file(path)
+        py_ast = core.py_parse_file(path)
         return _py_ast_to_dict(py_ast)
 
     def parse_source(self, source: str, language: str, file_path: str) -> dict[str, Any]:
         """Parse source with string language name (convenience, not part of the port)."""
-        py_ast = core.parse_source(source, language, file_path)
+        py_ast = core.py_parse_source(source, language, file_path)
         return _py_ast_to_dict(py_ast)

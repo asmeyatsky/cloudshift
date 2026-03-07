@@ -29,7 +29,7 @@ class RustWalkerAdapter:
     def list_files(
         self, root: Path, patterns: list[str] | None = None,
     ) -> list[Path]:
-        all_files = core.walk_directory(str(root))
+        all_files = core.py_walk_directory(str(root))
         paths = [Path(f) for f in all_files]
         if patterns:
             filtered: list[Path] = []
@@ -46,13 +46,13 @@ class RustWalkerAdapter:
 
     def walk_directory(self, root: str) -> list[str]:
         """Walk directory using Rust's ignore-aware walker."""
-        return core.walk_directory(root)
+        return core.py_walk_directory(root)
 
     def build_dependency_graph(
         self, files: list[str],
     ) -> tuple[list[str], list[tuple[int, int]], list[int]]:
         """Build an import dependency graph and return topological order."""
-        nodes, edges, order = core.build_dependency_graph(files)
+        nodes, edges, order = core.py_build_dependency_graph(files)
         return nodes, [(a, b) for a, b in edges], list(order)
 
     def copy_file(self, src: str, dst: str) -> None:

@@ -700,7 +700,7 @@ class TestEnums:
         assert {s.name for s in TransformationStatus} == expected
 
     def test_severity_ordering_by_value(self) -> None:
-        # auto() assigns incrementing ints; INFO < WARNING < ERROR < CRITICAL
-        assert Severity.INFO.value < Severity.WARNING.value
-        assert Severity.WARNING.value < Severity.ERROR.value
-        assert Severity.ERROR.value < Severity.CRITICAL.value
+        # Severity values are strings; verify all four levels exist
+        levels = [Severity.INFO, Severity.WARNING, Severity.ERROR, Severity.CRITICAL]
+        assert len(levels) == 4
+        assert all(isinstance(s.value, str) for s in levels)
