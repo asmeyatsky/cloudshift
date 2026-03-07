@@ -6,6 +6,7 @@ import asyncio
 import uuid
 from typing import Protocol
 
+from pathlib import Path
 from cloudshift.application.dtos.scan import FileEntry, ScanRequest, ScanResult
 from cloudshift.domain.value_objects.types import CloudProvider, ConfidenceScore, Language
 
@@ -54,24 +55,42 @@ class ScanProjectUseCase:
         fs: FileSystemReader,
         parser: Parser,
         detector: Detector,
+        allowed_paths: list[Path] | None = None,
         event_bus: EventPublisher | None = None,
     ) -> None:
         self._fs = fs
         self._parser = parser
         self._detector = detector
+        self._allowed_paths = [p.resolve() for p in (allowed_paths or [])]
         self._event_bus = event_bus
 
     async def execute(self, request: ScanRequest) -> ScanResult:
         project_id = uuid.uuid4().hex[:12]
 
-        await self._emit({"type": "ScanStarted", "project_id": project_id, "root": request.root_path})
+        # Security: Resolve and validate path to prevent traversal
+        try:
+            root_path = Path(request.root_path).resolve()
+            if self._allowed_paths:
+                is_allowed = any(root_path == p or p in root_path.parents for p in self._allowed_paths)
+                if not is_allowed:
+                    raise ValueError(f"Access denied to path: {request.root_path}")
+        except Exception as exc:
+             return ScanResult(
+                project_id=project_id,
+                root_path=request.root_path,
+                source_provider=request.source_provider,
+                target_provider=request.target_provider,
+                error=str(exc),
+            )
+
+        await self._emit({"type": "ScanStarted", "project_id": project_id, "root": str(root_path)})
 
         try:
-            paths = await self._fs.list_files(request.root_path, request.exclude_patterns or None)
+            paths = await self._fs.list_files(str(root_path), request.exclude_patterns or None)
         except Exception as exc:
             return ScanResult(
                 project_id=project_id,
-                root_path=request.root_path,
+                root_path=str(root_path),
                 source_provider=request.source_provider,
                 target_provider=request.target_provider,
                 error=str(exc),

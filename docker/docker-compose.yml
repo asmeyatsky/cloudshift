@@ -4,13 +4,16 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ../patterns:/app/patterns
+      - ../data:/app/data
     environment:
       - CLOUDSHIFT_PATTERNS_DIR=/app/patterns
+      - CLOUDSHIFT_DATA_DIR=/app/data
       - CLOUDSHIFT_LLM_ENABLED=false
       - CLOUDSHIFT_LOG_LEVEL=info
+      - CLOUDSHIFT_API_KEY=${CLOUDSHIFT_API_KEY:-}
     depends_on:
       - ollama
     profiles:
@@ -21,18 +24,21 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ../patterns:/app/patterns
+      - ../data:/app/data
     environment:
       - CLOUDSHIFT_PATTERNS_DIR=/app/patterns
+      - CLOUDSHIFT_DATA_DIR=/app/data
       - CLOUDSHIFT_LLM_ENABLED=false
       - CLOUDSHIFT_LOG_LEVEL=info
+      - CLOUDSHIFT_API_KEY=${CLOUDSHIFT_API_KEY:-}
 
   ollama:
     image: ollama/ollama:latest
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama-data:/root/.ollama
     profiles:

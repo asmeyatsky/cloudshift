@@ -73,7 +73,12 @@ export class CloudShiftApiError extends Error {
 export class ApiClient {
   private getBaseUrl(): string {
     const config = vscode.workspace.getConfiguration("cloudshift");
-    return config.get<string>("serverUrl", "http://localhost:8000");
+    return config.get<string>("serverUrl", "http://localhost:8000") || "http://localhost:8000";
+  }
+
+  private getApiKey(): string {
+    const config = vscode.workspace.getConfiguration("cloudshift");
+    return config.get<string>("apiKey", "") || "";
   }
 
   private request<T>(
@@ -83,19 +88,26 @@ export class ApiClient {
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       const baseUrl = this.getBaseUrl();
+      const apiKey = this.getApiKey();
       const url = new URL(path, baseUrl);
       const isHttps = url.protocol === "https:";
       const transport = isHttps ? https : http;
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      };
+
+      if (apiKey) {
+        headers["X-API-Key"] = apiKey;
+      }
 
       const options: http.RequestOptions = {
         hostname: url.hostname,
         port: url.port,
         path: url.pathname + url.search,
         method,
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+        headers,
         timeout: 60000,
       };
 

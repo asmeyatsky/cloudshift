@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     project_name: str = Field(default="cloudshift", description="Default project name.")
     db_path: Path = Field(default=Path("cloudshift.db"), description="SQLite database path.")
     patterns_dir: Path = Field(default=Path("patterns"), description="Directory containing YAML pattern files.")
+    data_dir: Path = Field(default=Path("data"), description="Base directory for project data.")
+    allowed_scan_paths: list[Path] = Field(
+        default=[Path(".")],
+        description="List of base paths allowed for scanning. Paths must be children of these.",
+    )
 
     # -- LLM --
     llm_enabled: bool = Field(default=False, description="Enable LLM-assisted transformations.")
@@ -38,6 +43,13 @@ class Settings(BaseSettings):
     # -- Validation --
     test_timeout: int = Field(default=300, description="Test runner timeout in seconds.")
     max_residual_refs: int = Field(default=0, description="Max allowed residual cloud references.")
+
+    # -- API / Security --
+    api_key: str | None = Field(default=None, description="Static API key for authentication.")
+    allowed_origins: list[str] = Field(
+        default=["http://localhost:3000", "http://localhost:5173", "vscode-webview://*"],
+        description="Allowed CORS origins.",
+    )
 
     # -- Logging / debug --
     log_level: str = Field(default="INFO", description="Logging level.")

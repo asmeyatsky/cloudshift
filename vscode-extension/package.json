@@ -83,6 +83,11 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically scan files on open and save"
+        },
+        "cloudshift.apiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Static API key for authenticating with the backend. Leave empty if authentication is disabled."
         }
       }
     }

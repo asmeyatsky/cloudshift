@@ -167,6 +167,7 @@ class Container:
                 fs=self.file_system,
                 parser=self.parser,
                 detector=self.detector,
+                allowed_paths=self._settings.allowed_scan_paths,
             ),
             GeneratePlanUseCase: lambda: GeneratePlanUseCase(
                 pattern_engine=self.pattern_engine,

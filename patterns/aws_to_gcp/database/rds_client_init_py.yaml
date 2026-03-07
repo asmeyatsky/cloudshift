@@ -39,6 +39,10 @@ transform:
   import_removals:
     - "import boto3"
   notes: >
+    SECURITY WARNING: Never hardcode credentials in your source code.
+    Always use environment variables, Secret Manager (e.g. Google Cloud Secret Manager),
+    or IAM-based authentication.
+
     RDS instances are accessed via DNS endpoints
     (*.rds.amazonaws.com) with optional IAM authentication via
     generate_db_auth_token(). Cloud SQL supports three connection methods:

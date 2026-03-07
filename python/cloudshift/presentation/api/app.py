@@ -9,10 +9,12 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from cloudshift.infrastructure.config.settings import Settings
+from cloudshift.presentation.api.dependencies import verify_api_key
 from cloudshift.presentation.api.routes import apply, config, patterns, plan, report, scan, validate
 from cloudshift.presentation.api.schemas import ErrorResponse
 from cloudshift.presentation.api.websocket import router as ws_router
@@ -25,40 +27,45 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize and tear down the DI container."""
     from cloudshift.infrastructure.config.dependency_injection import Container
 
-    container = Container()
+    # Use settings from app state if available, else default
+    settings = getattr(app.state, "settings", None)
+    container = Container(settings=settings)
     app.state.container = container
     logger.info("DI container initialised")
     yield
     logger.info("Shutting down")
 
 
-def create_app() -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and return the configured FastAPI application."""
+    settings = settings or Settings()
     app = FastAPI(
         title="CloudShift API",
         summary="Cloud migration automation platform",
         version="0.1.0",
         lifespan=_lifespan,
     )
+    app.state.settings = settings
 
-    # -- CORS (allow all origins for local dev) ----------------------------
+    # -- CORS (restrict to configured origins) ----------------------------
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=settings.allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # -- Route modules -----------------------------------------------------
-    app.include_router(scan.router)
-    app.include_router(plan.router)
-    app.include_router(apply.router)
-    app.include_router(validate.router)
-    app.include_router(patterns.router)
-    app.include_router(report.router)
-    app.include_router(config.router)
-    app.include_router(ws_router)
+    # -- Route modules (Protected) -----------------------------------------
+    protected_deps = [Depends(verify_api_key)]
+    app.include_router(scan.router, dependencies=protected_deps)
+    app.include_router(plan.router, dependencies=protected_deps)
+    app.include_router(apply.router, dependencies=protected_deps)
+    app.include_router(validate.router, dependencies=protected_deps)
+    app.include_router(patterns.router, dependencies=protected_deps)
+    app.include_router(report.router, dependencies=protected_deps)
+    app.include_router(config.router, dependencies=protected_deps)
+    app.include_router(ws_router, dependencies=protected_deps)
 
     # -- Error handlers ----------------------------------------------------
 

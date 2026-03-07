@@ -22,14 +22,25 @@ RUN npm run build
 FROM python:3.13-slim
 WORKDIR /app
 
+# Create a non-privileged user
+RUN groupadd -g 10001 cloudshift && \
+    useradd -u 10001 -g cloudshift -m -s /sbin/nologin cloudshift
+
 COPY --from=python-builder /build/dist/*.whl /tmp/
 RUN pip install /tmp/*.whl && rm /tmp/*.whl
 
-COPY --from=ui-builder /build/ui/dist/ /app/static/
-COPY patterns/ /app/patterns/
+COPY --from=ui-builder --chown=cloudshift:cloudshift /build/ui/dist/ /app/static/
+COPY --chown=cloudshift:cloudshift patterns/ /app/patterns/
+
+# Create data directory and set permissions
+RUN mkdir -p /app/data && chown cloudshift:cloudshift /app/data
 
 ENV CLOUDSHIFT_PATTERNS_DIR=/app/patterns
 ENV CLOUDSHIFT_STATIC_DIR=/app/static
+ENV CLOUDSHIFT_DATA_DIR=/app/data
+ENV CLOUDSHIFT_DB_PATH=/app/data/cloudshift.db
+
+USER cloudshift
 
 EXPOSE 8000
 

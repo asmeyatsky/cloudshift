@@ -4,12 +4,37 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi.security import APIKeyHeader
 
 
 def get_container(request: Request) -> Any:
     """Retrieve the DI container stored on ``app.state`` during lifespan."""
     return request.app.state.container
+
+
+def get_settings(request: Request) -> Any:
+    """Retrieve settings from app state."""
+    return request.app.state.settings
+
+
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(
+    request: Request,
+    api_key: str = Security(_api_key_header),
+):
+    """Verify the X-API-Key header against the configured static key."""
+    settings = get_settings(request)
+    if not settings.api_key:
+        return  # Auth disabled
+
+    if api_key != settings.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API Key",
+        )
 
 
 def get_scan_use_case(container: Any = Depends(get_container)):
