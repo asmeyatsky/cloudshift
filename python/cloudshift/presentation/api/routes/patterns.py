@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from cloudshift.application.dtos.pattern import PatternCatalogTestResponse
 from cloudshift.presentation.api.dependencies import get_patterns_use_case
 
 router = APIRouter(prefix="/api/patterns", tags=["patterns"])
@@ -13,6 +14,16 @@ router = APIRouter(prefix="/api/patterns", tags=["patterns"])
 async def list_patterns(use_case=Depends(get_patterns_use_case)):
     patterns = await use_case.list_patterns()
     return [p.model_dump() if hasattr(p, 'model_dump') else p for p in patterns]
+
+
+@router.post(
+    "/test",
+    response_model=PatternCatalogTestResponse,
+    summary="Run self-tests for all patterns",
+)
+async def test_patterns(use_case=Depends(get_patterns_use_case)):
+    """Run built-in examples for all patterns and return results."""
+    return await use_case.test_patterns()
 
 
 @router.get("/{pattern_id}", summary="Get a single pattern by ID")

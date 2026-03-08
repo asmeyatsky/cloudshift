@@ -92,3 +92,39 @@ pub fn py_match_and_transform(
         Ok(None)
     }
 }
+
+#[pyfunction]
+pub fn py_get_pattern_examples(pattern_id: String) -> PyResult<Vec<(String, String)>> {
+    let catalogue = GLOBAL_CATALOGUE.read().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to read catalogue: {}", e))
+    })?;
+
+    if let Some(rule) = catalogue.rules.iter().find(|r| r.id == pattern_id) {
+        let examples = rule
+            .examples
+            .iter()
+            .map(|e| (e.input.clone(), e.output.clone()))
+            .collect();
+        Ok(examples)
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+#[pyfunction]
+pub fn py_apply_pattern(pattern_id: String, content: String) -> PyResult<String> {
+    let catalogue = GLOBAL_CATALOGUE.read().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to read catalogue: {}", e))
+    })?;
+
+    if let Some(rule) = catalogue.rules.iter().find(|r| r.id == pattern_id) {
+        // For simple apply (no AST), we just do a direct replacement of all matches
+        // in the content if they match the rule's text patterns or method names.
+        // This is a simplified version for the 'Self-Test' use case.
+        let result = transformer::apply_rule(rule, &content);
+        Ok(result.transformed_text)
+    } else {
+        Ok(content)
+    }
+}
+

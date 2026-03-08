@@ -16,6 +16,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         pattern_engine::py_match_and_transform,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(pattern_engine::py_get_pattern_examples, m)?)?;
+    m.add_function(wrap_pyfunction!(pattern_engine::py_apply_pattern, m)?)?;
     m.add_function(wrap_pyfunction!(pattern_engine::py_load_patterns, m)?)?;
     m.add_function(wrap_pyfunction!(diff::py_unified_diff, m)?)?;
     m.add_function(wrap_pyfunction!(diff::py_ast_diff, m)?)?;

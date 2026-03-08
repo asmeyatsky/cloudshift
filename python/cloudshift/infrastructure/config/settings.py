@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # -- Validation --
     test_timeout: int = Field(default=300, description="Test runner timeout in seconds.")
     max_residual_refs: int = Field(default=0, description="Max allowed residual cloud references.")
+    min_confidence_score: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence score required for a detection to be included in results.",
+    )
 
     # -- API / Security --
     api_key: str | None = Field(default=None, description="Static API key for authentication.")

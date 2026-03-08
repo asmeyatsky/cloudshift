@@ -23,7 +23,7 @@ export default function ValidationDashboard({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">
+          <h2 className="text-lg font-semibold text-white">
             Validation Results
           </h2>
           {result && (
@@ -35,7 +35,7 @@ export default function ValidationDashboard({
         <button
           onClick={onRunValidation}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-primary-600 to-primary-500 px-4 py-2 text-sm font-medium text-white transition-all hover:shadow-lg hover:shadow-primary-500/20 disabled:opacity-50"
         >
           <RefreshCw
             className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
@@ -49,25 +49,25 @@ export default function ValidationDashboard({
         <div
           className={`flex items-center gap-3 rounded-xl border px-5 py-4 ${
             result.passed
-              ? "border-green-200 bg-green-50"
-              : "border-red-200 bg-red-50"
+              ? "border-green-500/20 bg-green-500/[0.06]"
+              : "border-red-500/20 bg-red-500/[0.06]"
           }`}
         >
           {result.passed ? (
-            <ShieldCheck className="h-6 w-6 text-green-600" />
+            <ShieldCheck className="h-6 w-6 text-green-400" />
           ) : (
-            <ShieldAlert className="h-6 w-6 text-red-500" />
+            <ShieldAlert className="h-6 w-6 text-red-400" />
           )}
           <div>
             <p
-              className={`font-medium ${result.passed ? "text-green-800" : "text-red-800"}`}
+              className={`font-medium ${result.passed ? "text-green-300" : "text-red-300"}`}
             >
               {result.passed
                 ? "All validations passed"
                 : "Validation issues detected"}
             </p>
             <p
-              className={`text-sm ${result.passed ? "text-green-600" : "text-red-600"}`}
+              className={`text-sm ${result.passed ? "text-green-400/70" : "text-red-400/70"}`}
             >
               {result.summary.totalIssues} issue
               {result.summary.totalIssues !== 1 ? "s" : ""} found
@@ -80,36 +80,30 @@ export default function ValidationDashboard({
       {result && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <SummaryCard
-            icon={<ShieldAlert className="h-5 w-5 text-red-500" />}
+            icon={<ShieldAlert className="h-5 w-5 text-red-400" />}
             label="Errors"
             count={result.summary.errors}
-            bg="bg-red-50"
-            border="border-red-200"
-            text="text-red-700"
+            color="red"
           />
           <SummaryCard
-            icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
+            icon={<AlertTriangle className="h-5 w-5 text-amber-400" />}
             label="Warnings"
             count={result.summary.warnings}
-            bg="bg-amber-50"
-            border="border-amber-200"
-            text="text-amber-700"
+            color="amber"
           />
           <SummaryCard
-            icon={<Info className="h-5 w-5 text-blue-500" />}
+            icon={<Info className="h-5 w-5 text-blue-400" />}
             label="Info"
             count={result.summary.infos}
-            bg="bg-blue-50"
-            border="border-blue-200"
-            text="text-blue-700"
+            color="blue"
           />
         </div>
       )}
 
       {/* Issues by rule */}
       {result && Object.keys(result.summary.issuesByRule).length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <h3 className="mb-3 text-sm font-semibold text-gray-700">
+        <div className="rounded-xl border border-white/[0.06] bg-surface-100 p-5">
+          <h3 className="mb-3 text-sm font-semibold text-gray-300">
             Issues by Rule
           </h3>
           <div className="space-y-2">
@@ -118,12 +112,12 @@ export default function ValidationDashboard({
               .map(([rule, count]) => (
                 <div
                   key={rule}
-                  className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm"
+                  className="flex items-center justify-between rounded-lg bg-surface-200/50 px-3 py-2 text-sm"
                 >
-                  <span className="font-mono text-xs text-gray-600">
+                  <span className="font-mono text-xs text-gray-400">
                     {rule}
                   </span>
-                  <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
+                  <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-xs font-medium text-gray-300">
                     {count}
                   </span>
                 </div>
@@ -133,9 +127,9 @@ export default function ValidationDashboard({
       )}
 
       {!result && !loading && (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white py-16 text-gray-400">
+        <div className="flex flex-col items-center justify-center rounded-xl border border-white/[0.06] bg-surface-100 py-16 text-gray-600">
           <ShieldCheck className="mb-3 h-10 w-10" />
-          <p className="text-sm">No validation results yet.</p>
+          <p className="text-sm text-gray-400">No validation results yet.</p>
           <p className="text-xs">
             Click "Run Validation" to check your migration.
           </p>
@@ -149,23 +143,30 @@ function SummaryCard({
   icon,
   label,
   count,
-  bg,
-  border,
-  text,
+  color,
 }: {
   icon: React.ReactNode;
   label: string;
   count: number;
-  bg: string;
-  border: string;
-  text: string;
+  color: "red" | "amber" | "blue";
 }) {
+  const styles = {
+    red: "border-red-500/15 bg-red-500/[0.06]",
+    amber: "border-amber-500/15 bg-amber-500/[0.06]",
+    blue: "border-blue-500/15 bg-blue-500/[0.06]",
+  };
+  const textStyles = {
+    red: "text-red-300",
+    amber: "text-amber-300",
+    blue: "text-blue-300",
+  };
+
   return (
-    <div className={`rounded-xl border ${border} ${bg} px-5 py-4`}>
+    <div className={`rounded-xl border ${styles[color]} px-5 py-4`}>
       <div className="flex items-center gap-3">
         {icon}
         <div>
-          <p className={`text-2xl font-bold ${text}`}>{count}</p>
+          <p className={`text-2xl font-bold ${textStyles[color]}`}>{count}</p>
           <p className="text-xs text-gray-500">{label}</p>
         </div>
       </div>

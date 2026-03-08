@@ -1,12 +1,14 @@
 import * as vscode from "vscode";
+import { ApiClient } from "../client/apiClient";
 
 export class StatusBarProvider implements vscode.Disposable {
   private statusBarItem: vscode.StatusBarItem;
   private patternCount: number = 0;
   private fileCount: number = 0;
   private serverOnline: boolean = false;
+  private healthInterval?: NodeJS.Timeout;
 
-  constructor() {
+  constructor(private apiClient: ApiClient) {
     this.statusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
       100,
@@ -14,6 +16,23 @@ export class StatusBarProvider implements vscode.Disposable {
     this.statusBarItem.command = "cloudshift.scanProject";
     this.updateDisplay();
     this.statusBarItem.show();
+    this.startHealthCheck();
+  }
+
+  private startHealthCheck(): void {
+    const check = async () => {
+      try {
+        const online = await this.apiClient.healthCheck();
+        this.setServerStatus(online);
+      } catch {
+        this.setServerStatus(false);
+      }
+    };
+    
+    // Initial check
+    check();
+    // Poll every 30 seconds
+    this.healthInterval = setInterval(check, 30000);
   }
 
   setPatternCount(patterns: number, files: number): void {
@@ -41,7 +60,7 @@ export class StatusBarProvider implements vscode.Disposable {
 
     if (!this.serverOnline) {
       this.statusBarItem.backgroundColor = new vscode.ThemeColor(
-        "statusBarItem.warningBackground",
+        "statusBarItem.errorBackground",
       );
     } else {
       this.statusBarItem.backgroundColor = undefined;
@@ -49,6 +68,9 @@ export class StatusBarProvider implements vscode.Disposable {
   }
 
   dispose(): void {
+    if (this.healthInterval) {
+      clearInterval(this.healthInterval);
+    }
     this.statusBarItem.dispose();
   }
 }

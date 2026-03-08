@@ -5,7 +5,11 @@ from __future__ import annotations
 import inspect
 from typing import Protocol
 
-from cloudshift.application.dtos.pattern import PatternDTO
+from cloudshift.application.dtos.pattern import (
+    PatternDTO,
+    PatternTestResult,
+    PatternCatalogTestResponse,
+)
 from cloudshift.domain.value_objects.types import CloudProvider, Language
 
 
@@ -16,15 +20,22 @@ class PatternStore(Protocol):
     def delete(self, pattern_id: str) -> bool: ...
 
 
+class PatternEngine(Protocol):
+    async def apply_pattern(self, pattern_id: str, content: str) -> str: ...
+    def get_examples(self, pattern_id: str) -> list[tuple[str, str]]: ...
+
+
 class ManagePatternsUseCase:
     """List, get, add, and search migration patterns."""
 
     def __init__(
         self,
         pattern_store: PatternStore,
+        pattern_engine: PatternEngine | None = None,
         embedding_search=None,
     ) -> None:
         self._store = pattern_store
+        self._engine = pattern_engine
         self._search = embedding_search
 
     async def _call(self, method, *args, **kwargs):
@@ -37,6 +48,52 @@ class ManagePatternsUseCase:
     async def list_patterns(self) -> list[PatternDTO]:
         stored = await self._call(self._store.list_all)
         return [self._to_dto(p) for p in stored]
+
+    async def test_patterns(self) -> PatternCatalogTestResponse:
+        """Run all patterns against their built-in examples to verify correctness."""
+        if self._engine is None:
+             raise ValueError("PatternEngine not available.")
+
+        all_patterns = await self.list_patterns()
+        results: list[PatternTestResult] = []
+        passed = 0
+
+        for p_dto in all_patterns:
+            pid = p_dto.pattern_id
+            examples = self._engine.get_examples(pid)
+            if not examples:
+                continue
+
+            for inp, exp in examples:
+                try:
+                    actual = await self._engine.apply_pattern(pid, inp)
+                    # Normalize whitespace for comparison
+                    is_match = actual.strip() == exp.strip()
+                    if is_match:
+                        passed += 1
+                        results.append(PatternTestResult(pattern_id=pid, success=True))
+                    else:
+                        results.append(PatternTestResult(
+                            pattern_id=pid,
+                            success=False,
+                            input=inp,
+                            expected=exp,
+                            actual=actual,
+                            error="Output does not match expected example."
+                        ))
+                except Exception as exc:
+                    results.append(PatternTestResult(
+                        pattern_id=pid,
+                        success=False,
+                        error=str(exc)
+                    ))
+
+        return PatternCatalogTestResponse(
+            total_patterns=len(all_patterns),
+            passed=passed,
+            failed=len(results) - passed,
+            results=results
+        )
 
     async def get_pattern(self, pattern_id: str) -> PatternDTO | None:
         p = await self._call(self._store.get_by_id, pattern_id)

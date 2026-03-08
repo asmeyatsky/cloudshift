@@ -35,6 +35,7 @@ class TransformRequest(BaseModel):
     step_ids: list[str] = Field(default_factory=list, description="Specific steps to apply; empty means all.")
     dry_run: bool = Field(default=False, description="If True, generate diffs without writing files.")
     backup: bool = Field(default=True, description="Create backups of modified files.")
+    check_git_clean: bool = Field(default=True, description="Ensure git repository is clean before applying.")
 
 
 class TransformResult(BaseModel):

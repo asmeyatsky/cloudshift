@@ -1,17 +1,16 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { applyApi } from "../services/api";
 import { useProjectStore, useOperationStore } from "../store";
-import type { ApplyResult } from "../types";
 
 export function useApply() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const planResult = useOperationStore((s) => s.planResult);
   const running = useOperationStore((s) => s.running);
   const progress = useOperationStore((s) => s.progress);
+  const applyResult = useOperationStore((s) => s.applyResult);
+  const setApplyResult = useOperationStore((s) => s.setApplyResult);
   const setRunning = useOperationStore((s) => s.setRunning);
   const setError = useOperationStore((s) => s.setError);
-
-  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
 
   const startApply = useCallback(async () => {
     if (!activeProject || !planResult || running) return;
@@ -27,7 +26,7 @@ export function useApply() {
       setError(res.error ?? "Apply failed");
     }
     setRunning(false);
-  }, [activeProject, planResult, running, setRunning, setError]);
+  }, [activeProject, planResult, running, setRunning, setError, setApplyResult]);
 
   return { startApply, running, applyResult, progress };
 }

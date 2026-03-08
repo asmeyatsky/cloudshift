@@ -22,17 +22,17 @@ export default function DiffPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Diff Viewer</h1>
+        <h1 className="text-2xl font-bold text-white">Diff Viewer</h1>
         <p className="mt-1 text-sm text-gray-500">
           Side-by-side comparison of planned transformations
         </p>
       </div>
 
       {planResult && (
-        <div className="mb-4 flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3">
-          <GitCompare className="h-5 w-5 text-purple-500" />
+        <div className="mb-4 flex items-center gap-4 rounded-xl border border-white/[0.06] bg-surface-100 px-5 py-3">
+          <GitCompare className="h-5 w-5 text-accent-purple" />
           <div className="text-sm">
-            <p className="font-medium text-gray-800">
+            <p className="font-medium text-gray-200">
               Plan: {planResult.id.slice(0, 8)}
             </p>
             <p className="text-xs text-gray-500">
@@ -40,10 +40,10 @@ export default function DiffPage() {
               <span
                 className={
                   planResult.riskLevel === "error"
-                    ? "text-red-600"
+                    ? "text-red-400"
                     : planResult.riskLevel === "warning"
-                      ? "text-amber-600"
-                      : "text-blue-600"
+                      ? "text-amber-400"
+                      : "text-blue-400"
                 }
               >
                 {planResult.riskLevel}

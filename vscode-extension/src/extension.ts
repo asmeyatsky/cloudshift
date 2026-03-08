@@ -28,7 +28,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const diagnosticsProvider = new CloudShiftDiagnosticsProvider();
   context.subscriptions.push(diagnosticsProvider);
 
-  const statusBarProvider = new StatusBarProvider();
+  const statusBarProvider = new StatusBarProvider(apiClient);
   context.subscriptions.push(statusBarProvider);
 
   // --- Views ---
@@ -96,16 +96,6 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
   );
-
-  // --- Initial server health check ---
-  apiClient.healthCheck().then((online) => {
-    statusBarProvider.setServerStatus(online);
-    if (!online) {
-      vscode.window.showWarningMessage(
-        "CloudShift: Backend server is not reachable. Start the server and run 'CloudShift: Scan Project'.",
-      );
-    }
-  });
 }
 
 export function deactivate(): void {

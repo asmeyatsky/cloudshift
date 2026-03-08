@@ -37,11 +37,11 @@ export default function ManifestViewer() {
 
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (sortKey !== col)
-      return <ChevronUp className="h-3 w-3 text-gray-300" />;
+      return <ChevronUp className="h-3 w-3 text-gray-700" />;
     return sortDir === "asc" ? (
-      <ChevronUp className="h-3 w-3 text-primary-600" />
+      <ChevronUp className="h-3 w-3 text-primary-400" />
     ) : (
-      <ChevronDown className="h-3 w-3 text-primary-600" />
+      <ChevronDown className="h-3 w-3 text-primary-400" />
     );
   };
 
@@ -87,22 +87,22 @@ export default function ManifestViewer() {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" />
           <input
             type="text"
             placeholder="Search files or resource types..."
             value={filter.search}
             onChange={(e) => setFilter({ search: e.target.value })}
-            className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="w-full rounded-lg border border-white/[0.08] bg-surface-200 py-2 pl-9 pr-3 text-sm text-gray-200 placeholder:text-gray-600 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
           />
         </div>
 
         <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-gray-400" />
+          <Filter className="h-4 w-4 text-gray-600" />
           <select
             value={filter.status}
             onChange={(e) => setFilter({ status: e.target.value })}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2 text-sm text-gray-300 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
           >
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>
@@ -113,7 +113,7 @@ export default function ManifestViewer() {
           <select
             value={filter.resourceType}
             onChange={(e) => setFilter({ resourceType: e.target.value })}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2 text-sm text-gray-300 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
           >
             <option value="">All Types</option>
             {resourceTypes.map((t) => (
@@ -126,10 +126,10 @@ export default function ManifestViewer() {
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-surface-100">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+            <tr className="border-b border-white/[0.06] bg-surface-200/50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
               {(
                 [
                   ["filePath", "File Path"],
@@ -140,7 +140,7 @@ export default function ManifestViewer() {
               ).map(([key, label]) => (
                 <th
                   key={key}
-                  className="cursor-pointer px-4 py-3 hover:text-gray-700"
+                  className="cursor-pointer px-4 py-3 hover:text-gray-300"
                   onClick={() => toggleSort(key)}
                 >
                   <span className="flex items-center gap-1">
@@ -152,12 +152,12 @@ export default function ManifestViewer() {
               <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-white/[0.04]">
             {filtered.length === 0 ? (
               <tr>
                 <td
                   colSpan={5}
-                  className="px-4 py-8 text-center text-gray-400"
+                  className="px-4 py-8 text-center text-gray-600"
                 >
                   No manifest entries found.
                 </td>
@@ -175,7 +175,7 @@ export default function ManifestViewer() {
         </table>
       </div>
 
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-gray-600">
         Showing {filtered.length} of {entries.length} entries
       </p>
     </div>

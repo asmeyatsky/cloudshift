@@ -56,12 +56,14 @@ class ScanProjectUseCase:
         parser: Parser,
         detector: Detector,
         allowed_paths: list[Path] | None = None,
+        min_confidence: float = 0.5,
         event_bus: EventPublisher | None = None,
     ) -> None:
         self._fs = fs
         self._parser = parser
         self._detector = detector
         self._allowed_paths = [p.resolve() for p in (allowed_paths or [])]
+        self._min_confidence = min_confidence
         self._event_bus = event_bus
 
     async def execute(self, request: ScanRequest) -> ScanResult:
@@ -107,8 +109,9 @@ class ScanProjectUseCase:
             if isinstance(result, Exception):
                 continue
             if result is not None:
-                entries.append(result)
-                all_services.update(result.services_detected)
+                if result.services_detected:
+                    entries.append(result)
+                    all_services.update(result.services_detected)
 
         await self._emit(
             {"type": "ScanCompleted", "project_id": project_id, "files": len(entries)},
@@ -116,7 +119,7 @@ class ScanProjectUseCase:
 
         return ScanResult(
             project_id=project_id,
-            root_path=request.root_path,
+            root_path=str(root_path),
             source_provider=request.source_provider,
             target_provider=request.target_provider,
             files=entries,
@@ -146,13 +149,18 @@ class ScanProjectUseCase:
         if not detections:
             return None
 
-        best_confidence = max((float(c) for _, c in detections), default=0.0)
+        # Filter by minimum confidence
+        high_confidence = [(svc, float(conf)) for svc, conf in detections if float(conf) >= self._min_confidence]
+        if not high_confidence:
+            return None
+
+        best_confidence = max((c for _, c in high_confidence), default=0.0)
         line_count = await self._parser.count_lines(content)
 
         return FileEntry(
             path=path,
             language=language,
-            services_detected=[svc for svc, _ in detections],
+            services_detected=[svc for svc, _ in high_confidence],
             confidence=best_confidence,
             line_count=line_count,
         )

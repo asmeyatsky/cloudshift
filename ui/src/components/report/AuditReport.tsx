@@ -26,7 +26,7 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">Audit Report</h2>
+          <h2 className="text-lg font-semibold text-white">Audit Report</h2>
           <p className="text-sm text-gray-500">
             Comprehensive migration audit summary
           </p>
@@ -35,7 +35,7 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
           <button
             onClick={onGenerate}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-primary-600 to-primary-500 px-4 py-2 text-sm font-medium text-white hover:shadow-lg hover:shadow-primary-500/20 disabled:opacity-50"
           >
             <RefreshCw
               className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
@@ -53,7 +53,7 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
                 a.click();
                 URL.revokeObjectURL(url);
               }}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] px-4 py-2 text-sm font-medium text-gray-400 hover:bg-white/[0.04] hover:text-gray-200"
             >
               <Download className="h-4 w-4" />
               Download HTML
@@ -65,22 +65,22 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
       {/* Quick summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <ReportCard
-          icon={<FileText className="h-5 w-5 text-blue-500" />}
+          icon={<FileText className="h-5 w-5 text-primary-400" />}
           label="Files Scanned"
           value={scanResult?.filesScanned ?? 0}
         />
         <ReportCard
-          icon={<GitCompare className="h-5 w-5 text-purple-500" />}
+          icon={<GitCompare className="h-5 w-5 text-accent-purple" />}
           label="Transformations"
           value={planResult?.transformations.length ?? 0}
         />
         <ReportCard
-          icon={<FileBarChart className="h-5 w-5 text-emerald-500" />}
+          icon={<FileBarChart className="h-5 w-5 text-accent-green" />}
           label="Manifest Entries"
           value={entries.length}
         />
         <ReportCard
-          icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
+          icon={<AlertTriangle className="h-5 w-5 text-amber-400" />}
           label="Validation Issues"
           value={validationResult?.summary.totalIssues ?? 0}
         />
@@ -91,15 +91,15 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
         <div
           className={`flex items-center gap-3 rounded-xl border px-5 py-4 ${
             validationResult.passed
-              ? "border-green-200 bg-green-50"
-              : "border-red-200 bg-red-50"
+              ? "border-green-500/20 bg-green-500/[0.06]"
+              : "border-red-500/20 bg-red-500/[0.06]"
           }`}
         >
           <ShieldCheck
-            className={`h-5 w-5 ${validationResult.passed ? "text-green-600" : "text-red-500"}`}
+            className={`h-5 w-5 ${validationResult.passed ? "text-green-400" : "text-red-400"}`}
           />
           <p
-            className={`text-sm font-medium ${validationResult.passed ? "text-green-800" : "text-red-800"}`}
+            className={`text-sm font-medium ${validationResult.passed ? "text-green-300" : "text-red-300"}`}
           >
             {validationResult.passed
               ? "Migration passed all validation checks"
@@ -110,8 +110,8 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
 
       {/* Entry status breakdown */}
       {entries.length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <h3 className="mb-4 text-sm font-semibold text-gray-700">
+        <div className="rounded-xl border border-white/[0.06] bg-surface-100 p-5">
+          <h3 className="mb-4 text-sm font-semibold text-gray-300">
             Entry Status Breakdown
           </h3>
           <div className="space-y-2">
@@ -125,16 +125,16 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
               return (
                 <div key={status}>
                   <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="font-medium capitalize text-gray-600">
+                    <span className="font-medium capitalize text-gray-400">
                       {status}
                     </span>
-                    <span className="text-gray-400">
+                    <span className="text-gray-600">
                       {count} ({pct}%)
                     </span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-300">
                     <div
-                      className="h-full rounded-full bg-primary-500 transition-all"
+                      className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-purple transition-all"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
@@ -147,21 +147,21 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
 
       {/* Rendered HTML report */}
       {reportHtml && (
-        <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <h3 className="mb-4 text-sm font-semibold text-gray-700">
+        <div className="rounded-xl border border-white/[0.06] bg-surface-100 p-6">
+          <h3 className="mb-4 text-sm font-semibold text-gray-300">
             Full Report
           </h3>
           <div
-            className="prose prose-sm max-w-none"
+            className="prose prose-invert prose-sm max-w-none"
             dangerouslySetInnerHTML={{ __html: reportHtml }}
           />
         </div>
       )}
 
       {!reportHtml && !loading && (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white py-16 text-gray-400">
+        <div className="flex flex-col items-center justify-center rounded-xl border border-white/[0.06] bg-surface-100 py-16 text-gray-600">
           <FileBarChart className="mb-3 h-10 w-10" />
-          <p className="text-sm">No report generated yet.</p>
+          <p className="text-sm text-gray-400">No report generated yet.</p>
           <p className="text-xs">
             Click "Generate Report" to create an audit report.
           </p>
@@ -181,11 +181,11 @@ function ReportCard({
   value: number;
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white px-5 py-4">
+    <div className="rounded-xl border border-white/[0.06] bg-surface-100 px-5 py-4">
       <div className="flex items-center gap-3">
         {icon}
         <div>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
+          <p className="text-2xl font-bold text-white">{value}</p>
           <p className="text-xs text-gray-500">{label}</p>
         </div>
       </div>

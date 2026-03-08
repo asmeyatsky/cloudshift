@@ -31,15 +31,15 @@ export default function PatternsPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Patterns</h1>
+        <h1 className="text-2xl font-bold text-white">Patterns</h1>
         <p className="mt-1 text-sm text-gray-500">
           Browse and explore cloud migration transformation patterns
         </p>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-gray-400">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-primary-600" />
+        <div className="flex items-center justify-center py-16 text-gray-500">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-surface-400 border-t-primary-500" />
           <span className="ml-3 text-sm">Loading patterns...</span>
         </div>
       ) : selectedPattern ? (

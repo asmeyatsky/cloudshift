@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import Protocol
 
 from cloudshift.application.dtos.transform import DiffResult, HunkDTO, TransformRequest, TransformResult
+from cloudshift.domain.value_objects.types import Language
 
 
 # ---------------------------------------------------------------------------
@@ -33,11 +35,18 @@ class PlanStep(Protocol):
     @property
     def pattern_id(self) -> str: ...
     @property
+    def language(self) -> Language: ...
+    @property
     def depends_on(self) -> list[str]: ...
 
 
 class PatternEngine(Protocol):
     async def apply_pattern(self, pattern_id: str, content: str) -> str: ...
+
+
+class ImportOrganizer(Protocol):
+    """Clean and deduplicate imports in source code."""
+    async def organize(self, content: str, language: Language) -> str: ...
 
 
 class FileSystem(Protocol):
@@ -46,8 +55,14 @@ class FileSystem(Protocol):
     async def copy_file(self, src: str, dst: str) -> None: ...
 
 
+class GitSafety(Protocol):
+    """Safety checks for repository state."""
+    def is_repo_clean(self, project_path: str) -> bool: ...
+
+
 class DiffEngine(Protocol):
     async def compute_diff(self, original: str, modified: str, path: str) -> list[DiffHunkRaw]: ...
+
 
 
 class DiffHunkRaw(Protocol):
@@ -80,18 +95,34 @@ class ApplyTransformationUseCase:
         pattern_engine: PatternEngine,
         fs: FileSystem,
         diff_engine: DiffEngine,
+        git: GitSafety | None = None,
+        imports: ImportOrganizer | None = None,
         event_bus: EventPublisher | None = None,
     ) -> None:
         self._plan_store = plan_store
         self._pattern_engine = pattern_engine
         self._fs = fs
         self._diff_engine = diff_engine
+        self._git = git
+        self._imports = imports
         self._event_bus = event_bus
 
     async def execute(self, request: TransformRequest) -> TransformResult:
         plan = await self._plan_store.get_plan(request.plan_id)
         if plan is None:
             return TransformResult(plan_id=request.plan_id, success=False, errors=[f"Plan {request.plan_id!r} not found."])
+
+        # Git safety check
+        if request.check_git_clean and not request.dry_run:
+            # We assume root_path is available from plan or first step path parent
+            if plan.steps:
+                project_root = str(Path(plan.steps[0].file_path).parent)
+                if self._git and not self._git.is_repo_clean(project_root):
+                    return TransformResult(
+                        plan_id=request.plan_id,
+                        success=False,
+                        errors=["Git repository is not clean. Commit or stash changes before applying."],
+                    )
 
         await self._emit({"type": "TransformStarted", "plan_id": request.plan_id})
 
@@ -144,6 +175,10 @@ class ApplyTransformationUseCase:
     async def _apply_step(self, step: PlanStep, dry_run: bool, backup: bool) -> DiffResult | None:
         original = await self._fs.read_file(step.file_path)
         modified = await self._pattern_engine.apply_pattern(step.pattern_id, original)
+
+        # Organize imports if the engine is available
+        if self._imports:
+            modified = await self._imports.organize(modified, step.language)
 
         if original == modified:
             return None

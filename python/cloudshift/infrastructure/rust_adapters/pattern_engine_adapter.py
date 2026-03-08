@@ -125,3 +125,15 @@ class RustPatternEngineAdapter:
             "confidence": result.confidence,
             "metadata": dict(result.metadata),
         }
+
+    async def apply_pattern(self, pattern_id: str, content: str) -> str:
+        """Apply a specific pattern by ID to source content."""
+        # Note: In production, we'd lookup the pattern details (provider, service, lang)
+        # for now we'll assume the engine handles it or we'll wrap it.
+        result = core.py_apply_pattern(pattern_id, content)
+        return str(result)
+
+    def get_examples(self, pattern_id: str) -> list[tuple[str, str]]:
+        """Retrieve list of (input, output) examples for a pattern."""
+        examples = core.py_get_pattern_examples(pattern_id)
+        return [(str(i), str(o)) for i, o in examples]

@@ -14,9 +14,9 @@ export default function DiffViewer({ diffs }: Props) {
 
   if (diffs.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white py-16 text-gray-400">
+      <div className="flex flex-col items-center justify-center rounded-xl border border-white/[0.06] bg-surface-100 py-16 text-gray-600">
         <FileCode className="mb-3 h-10 w-10" />
-        <p className="text-sm">No diffs to display.</p>
+        <p className="text-sm text-gray-400">No diffs to display.</p>
         <p className="text-xs">Run a plan to generate transformation diffs.</p>
       </div>
     );
@@ -29,30 +29,30 @@ export default function DiffViewer({ diffs }: Props) {
         return (
           <div
             key={diff.filePath}
-            className="overflow-hidden rounded-xl border border-gray-200 bg-white"
+            className="overflow-hidden rounded-xl border border-white/[0.06] bg-surface-100"
           >
             {/* File header */}
             <button
               onClick={() =>
                 setExpandedFile(isExpanded ? null : diff.filePath)
               }
-              className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50"
+              className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-white/[0.03]"
             >
               {isExpanded ? (
-                <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+                <ChevronDown className="h-4 w-4 shrink-0 text-gray-500" />
               ) : (
-                <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-gray-500" />
               )}
-              <FileCode className="h-4 w-4 shrink-0 text-gray-400" />
-              <span className="flex-1 truncate font-mono text-xs text-gray-700">
+              <FileCode className="h-4 w-4 shrink-0 text-gray-500" />
+              <span className="flex-1 truncate font-mono text-xs text-gray-300">
                 {diff.filePath}
               </span>
               <span className="flex items-center gap-2 text-xs">
-                <span className="flex items-center gap-0.5 text-green-600">
+                <span className="flex items-center gap-0.5 text-green-400">
                   <Plus className="h-3 w-3" />
                   {diff.stats.additions}
                 </span>
-                <span className="flex items-center gap-0.5 text-red-500">
+                <span className="flex items-center gap-0.5 text-red-400">
                   <Minus className="h-3 w-3" />
                   {diff.stats.deletions}
                 </span>
@@ -61,13 +61,13 @@ export default function DiffViewer({ diffs }: Props) {
 
             {/* Monaco diff editor */}
             {isExpanded && (
-              <div className="border-t border-gray-200">
+              <div className="border-t border-white/[0.06]">
                 <DiffEditor
                   height="480px"
                   language={detectLanguage(diff.filePath)}
                   original={diff.original}
                   modified={diff.modified}
-                  theme="vs"
+                  theme="vs-dark"
                   options={{
                     readOnly: true,
                     renderSideBySide: true,

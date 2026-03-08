@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type {
+  ApplyResult,
   FileDiff,
   Manifest,
   ManifestEntry,
@@ -79,6 +80,7 @@ interface ValidationState {
   setResult: (result: ValidationResult | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  resolveIssue: (issueId: string) => void;
 }
 
 export const useValidationStore = create<ValidationState>((set) => ({
@@ -88,6 +90,35 @@ export const useValidationStore = create<ValidationState>((set) => ({
   setResult: (result) => set({ result }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+  resolveIssue: (issueId) =>
+    set((s) => {
+      if (!s.result) return s;
+      const removed = s.result.issues.find((i) => i.id === issueId);
+      const issues = s.result.issues.filter((i) => i.id !== issueId);
+      const summary = { ...s.result.summary };
+      if (removed) {
+        summary.totalIssues = issues.length;
+        if (removed.severity === "error") summary.errors--;
+        else if (removed.severity === "warning") summary.warnings--;
+        else summary.infos--;
+        const ruleCount = summary.issuesByRule[removed.ruleId];
+        if (ruleCount !== undefined) {
+          if (ruleCount <= 1) {
+            delete summary.issuesByRule[removed.ruleId];
+          } else {
+            summary.issuesByRule[removed.ruleId] = ruleCount - 1;
+          }
+        }
+      }
+      return {
+        result: {
+          ...s.result,
+          issues,
+          summary,
+          passed: issues.filter((i) => i.severity === "error").length === 0,
+        },
+      };
+    }),
 }));
 
 /* ------------------------------------------------------------------ */
@@ -124,12 +155,14 @@ export const usePatternsStore = create<PatternsState>((set) => ({
 interface OperationState {
   scanResult: ScanResult | null;
   planResult: PlanResult | null;
+  applyResult: ApplyResult | null;
   diffs: FileDiff[];
   progress: ProgressPayload | null;
   running: boolean;
   error: string | null;
   setScanResult: (r: ScanResult | null) => void;
   setPlanResult: (r: PlanResult | null) => void;
+  setApplyResult: (r: ApplyResult | null) => void;
   setDiffs: (d: FileDiff[]) => void;
   setProgress: (p: ProgressPayload | null) => void;
   setRunning: (running: boolean) => void;
@@ -140,12 +173,14 @@ interface OperationState {
 export const useOperationStore = create<OperationState>((set) => ({
   scanResult: null,
   planResult: null,
+  applyResult: null,
   diffs: [],
   progress: null,
   running: false,
   error: null,
   setScanResult: (scanResult) => set({ scanResult }),
   setPlanResult: (planResult) => set({ planResult }),
+  setApplyResult: (applyResult) => set({ applyResult }),
   setDiffs: (diffs) => set({ diffs }),
   setProgress: (progress) => set({ progress }),
   setRunning: (running) => set({ running }),
@@ -154,6 +189,7 @@ export const useOperationStore = create<OperationState>((set) => ({
     set({
       scanResult: null,
       planResult: null,
+      applyResult: null,
       diffs: [],
       progress: null,
       running: false,

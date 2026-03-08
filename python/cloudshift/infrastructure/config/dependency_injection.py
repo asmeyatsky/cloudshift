@@ -11,12 +11,14 @@ from cloudshift.infrastructure.config.settings import Settings
 
 # -- Concrete adapter imports (only place these appear) ---------------------
 from cloudshift.infrastructure.file_system.local_fs import LocalFileSystem
+from cloudshift.infrastructure.file_system.git_safety import GitSafety
 from cloudshift.infrastructure.llm.null_adapter import NullLLMAdapter
 from cloudshift.infrastructure.llm.ollama_adapter import OllamaAdapter
 from cloudshift.infrastructure.pattern_store.local_store import LocalPatternStore
 from cloudshift.infrastructure.persistence.sqlite_repository import SQLiteProjectRepository
 from cloudshift.infrastructure.rust_adapters.detector_adapter import RustDetectorAdapter
 from cloudshift.infrastructure.rust_adapters.diff_adapter import RustDiffAdapter
+from cloudshift.infrastructure.rust_adapters.import_organizer import RustImportOrganizerAdapter
 from cloudshift.infrastructure.rust_adapters.parser_adapter import RustParserAdapter
 from cloudshift.infrastructure.rust_adapters.pattern_engine_adapter import RustPatternEngineAdapter
 from cloudshift.infrastructure.rust_adapters.validation_adapter import RustValidationAdapter
@@ -66,6 +68,10 @@ class Container:
     def diff(self) -> RustDiffAdapter:
         return self._get_or_create("diff", self._make_diff)
 
+    @property
+    def import_organizer(self) -> RustImportOrganizerAdapter:
+        return self._get_or_create("import_organizer", self._make_import_organizer)
+
     # -- File system ports --------------------------------------------------
 
     @property
@@ -75,6 +81,10 @@ class Container:
     @property
     def file_system(self) -> LocalFileSystem:
         return self._get_or_create("file_system", self._make_file_system)
+
+    @property
+    def git_safety(self) -> GitSafety:
+        return self._get_or_create("git_safety", self._make_git_safety)
 
     # -- Validation ports ---------------------------------------------------
 
@@ -122,11 +132,17 @@ class Container:
     def _make_diff(self) -> RustDiffAdapter:
         return RustDiffAdapter()
 
+    def _make_import_organizer(self) -> RustImportOrganizerAdapter:
+        return RustImportOrganizerAdapter()
+
     def _make_walker(self) -> RustWalkerAdapter:
         return RustWalkerAdapter()
 
     def _make_file_system(self) -> LocalFileSystem:
         return LocalFileSystem()
+
+    def _make_git_safety(self) -> GitSafety:
+        return GitSafety()
 
     def _make_validation(self) -> RustValidationAdapter:
         return RustValidationAdapter(parser=self.parser)
@@ -168,6 +184,7 @@ class Container:
                 parser=self.parser,
                 detector=self.detector,
                 allowed_paths=self._settings.allowed_scan_paths,
+                min_confidence=self._settings.min_confidence_score,
             ),
             GeneratePlanUseCase: lambda: GeneratePlanUseCase(
                 pattern_engine=self.pattern_engine,
@@ -178,6 +195,8 @@ class Container:
                 pattern_engine=self.pattern_engine,
                 fs=self.file_system,
                 diff_engine=self.diff,
+                git=self.git_safety,
+                imports=self.import_organizer,
             ),
             ValidateTransformationUseCase: lambda: ValidateTransformationUseCase(
                 ast_validator=self.validation,
@@ -188,6 +207,7 @@ class Container:
             ),
             ManagePatternsUseCase: lambda: ManagePatternsUseCase(
                 pattern_store=self.pattern_store,
+                pattern_engine=self.pattern_engine,
             ),
             GenerateReportUseCase: lambda: GenerateReportUseCase(
                 project_store=self.project_repository,
