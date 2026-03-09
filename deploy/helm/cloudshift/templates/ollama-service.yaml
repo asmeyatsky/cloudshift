@@ -1,0 +1,18 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cloudshift.fullname" . }}-ollama
+  labels:
+    {{- include "cloudshift.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.ollama.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "cloudshift.ollama.selectorLabels" . | nindent 4 }}
+{{- end }}

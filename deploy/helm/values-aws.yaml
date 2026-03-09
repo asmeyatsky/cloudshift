@@ -1,0 +1,39 @@
+# ── AWS (EKS) Overrides ──────────────────────────────────────────
+# Usage: helm install cloudshift ./cloudshift -f values-aws.yaml
+
+global:
+  imageRegistry: ""  # set to your ECR: 123456789.dkr.ecr.us-east-1.amazonaws.com
+
+ingress:
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: ""  # ACM cert ARN
+  host: cloudshift.example.com
+  tls:
+    enabled: true
+    secretName: cloudshift-tls
+
+api:
+  persistence:
+    storageClass: gp3    # EBS gp3
+
+ollama:
+  persistence:
+    storageClass: gp3
+  gpu:
+    enabled: true
+    count: 1
+    resourceName: nvidia.com/gpu
+  nodeSelector:
+    node.kubernetes.io/instance-type: g5.xlarge   # NVIDIA A10G
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: ""  # IRSA role ARN for S3/Secrets access

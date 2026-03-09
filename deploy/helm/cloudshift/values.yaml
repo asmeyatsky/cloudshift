@@ -1,0 +1,115 @@
+# ──────────────────────────────────────────────────────────────────
+# CloudShift Helm Chart — Default Values
+# Override per cloud with: helm install -f values-aws.yaml ...
+# ──────────────────────────────────────────────────────────────────
+
+global:
+  imageRegistry: ""   # e.g. 123456.dkr.ecr.us-east-1.amazonaws.com
+  imagePullSecrets: []
+
+# ── API Service ──────────────────────────────────────────────────
+api:
+  image:
+    repository: cloudshift/api
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  replicas: 2
+  port: 8000
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+
+  env:
+    CLOUDSHIFT_PATTERNS_DIR: /app/patterns
+    CLOUDSHIFT_DATA_DIR: /app/data
+    CLOUDSHIFT_DB_PATH: /app/data/cloudshift.db
+    CLOUDSHIFT_STATIC_DIR: /app/static
+    CLOUDSHIFT_LOG_LEVEL: info
+    CLOUDSHIFT_LLM_ENABLED: "true"
+    CLOUDSHIFT_OLLAMA_BASE_URL: http://cloudshift-ollama:11434
+    CLOUDSHIFT_OLLAMA_MODEL: qwen2.5-coder:14b
+
+  # Secrets injected from K8s secret
+  secretName: cloudshift-secrets
+
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""  # uses cluster default; override per cloud
+    accessMode: ReadWriteOnce
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+# ── Ollama LLM ───────────────────────────────────────────────────
+ollama:
+  enabled: true
+  image:
+    repository: ollama/ollama
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 11434
+
+  model: qwen2.5-coder:14b
+  # Custom Modelfile (baked system prompt + params)
+  modelfileConfigMap: cloudshift-modelfile
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: 12Gi
+    limits:
+      cpu: "4"
+      memory: 16Gi
+
+  gpu:
+    enabled: true
+    count: 1
+    # nvidia.com/gpu for NVIDIA, amd.com/gpu for AMD
+    resourceName: nvidia.com/gpu
+
+  nodeSelector: {}
+  tolerations: []
+
+  persistence:
+    enabled: true
+    size: 30Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+# ── Ingress ──────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: ""            # nginx, alb, gce — override per cloud
+  annotations: {}
+  host: cloudshift.local
+  tls:
+    enabled: false
+    secretName: cloudshift-tls
+
+# ── Service ──────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+
+# ── Service Account ──────────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}  # e.g. eks.amazonaws.com/role-arn for IRSA

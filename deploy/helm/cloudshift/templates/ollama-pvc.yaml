@@ -1,0 +1,17 @@
+{{- if and .Values.ollama.enabled .Values.ollama.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cloudshift.fullname" . }}-ollama
+  labels:
+    {{- include "cloudshift.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.ollama.persistence.accessMode }}
+  {{- if .Values.ollama.persistence.storageClass }}
+  storageClassName: {{ .Values.ollama.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.ollama.persistence.size }}
+{{- end }}

@@ -1,0 +1,28 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.ollama.modelfileConfigMap }}
+  labels:
+    {{- include "cloudshift.labels" . | nindent 4 }}
+data:
+  Modelfile: |
+    FROM {{ .Values.ollama.model }}
+
+    SYSTEM """You are a cloud migration expert specializing in transforming code between AWS, Azure, and Google Cloud Platform.
+
+    Rules:
+    1. Produce exact, working code replacements with correct import statements
+    2. Never invent APIs that do not exist — only use documented SDK methods
+    3. Preserve the original code's business logic, error handling, and comments
+    4. Map cloud service concepts to the closest equivalent on the target provider
+    5. When a 1:1 mapping does not exist, explain the gap and suggest the closest alternative
+    6. When uncertain about a transformation, say so and recommend manual review
+    7. Always include the complete import statement changes (additions and removals)
+    8. Use official cloud client libraries (not REST APIs) unless specifically asked otherwise"""
+
+    PARAMETER temperature 0.1
+    PARAMETER top_p 0.9
+    PARAMETER num_ctx 32768
+    PARAMETER stop "<|endoftext|>"
+{{- end }}

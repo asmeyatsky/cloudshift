@@ -1,0 +1,15 @@
+apiVersion: v2
+name: cloudshift
+description: CloudShift — AI-powered cloud migration agent
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - cloud-migration
+  - ai-agent
+  - llm
+  - aws
+  - gcp
+  - azure
+maintainers:
+  - name: CloudShift Team

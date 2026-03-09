@@ -1,0 +1,104 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cloudshift.fullname" . }}-ollama
+  labels:
+    {{- include "cloudshift.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+spec:
+  replicas: {{ .Values.ollama.replicas }}
+  strategy:
+    type: Recreate    # GPU workloads can't do rolling
+  selector:
+    matchLabels:
+      {{- include "cloudshift.ollama.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cloudshift.ollama.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ollama.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ollama.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Pull the model on first boot
+        - name: model-pull
+          image: {{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              # Start ollama in the background, pull model, then stop
+              ollama serve &
+              sleep 5
+              ollama pull {{ .Values.ollama.model }}
+              # If a custom Modelfile is mounted, create it
+              if [ -f /modelfile/Modelfile ]; then
+                ollama create cloudshift -f /modelfile/Modelfile
+              fi
+              kill %1
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+            {{- if .Values.ollama.modelfileConfigMap }}
+            - name: modelfile
+              mountPath: /modelfile
+            {{- end }}
+          resources:
+            {{- toYaml .Values.ollama.resources | nindent 12 }}
+          {{- if .Values.ollama.gpu.enabled }}
+            limits:
+              {{ .Values.ollama.gpu.resourceName }}: {{ .Values.ollama.gpu.count }}
+          {{- end }}
+      containers:
+        - name: ollama
+          image: {{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}
+          imagePullPolicy: {{ .Values.ollama.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ollama.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /api/tags
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.ollama.resources | nindent 12 }}
+            {{- if .Values.ollama.gpu.enabled }}
+            limits:
+              {{ .Values.ollama.gpu.resourceName }}: {{ .Values.ollama.gpu.count }}
+            {{- end }}
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+      volumes:
+        - name: ollama-data
+          {{- if .Values.ollama.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "cloudshift.fullname" . }}-ollama
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.ollama.modelfileConfigMap }}
+        - name: modelfile
+          configMap:
+            name: {{ .Values.ollama.modelfileConfigMap }}
+        {{- end }}
+{{- end }}

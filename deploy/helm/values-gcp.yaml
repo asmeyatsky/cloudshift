@@ -1,0 +1,36 @@
+# ── GCP (GKE) Overrides ──────────────────────────────────────────
+# Usage: helm install cloudshift ./cloudshift -f values-gcp.yaml
+
+global:
+  imageRegistry: ""  # set to your AR: us-central1-docker.pkg.dev/PROJECT/cloudshift
+
+ingress:
+  className: gce
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: cloudshift-ip
+    networking.gke.io/managed-certificates: cloudshift-cert
+  host: cloudshift.example.com
+  tls:
+    enabled: false  # handled by GKE managed cert
+
+api:
+  persistence:
+    storageClass: standard-rwo   # GKE Persistent Disk
+
+ollama:
+  persistence:
+    storageClass: standard-rwo
+  gpu:
+    enabled: true
+    count: 1
+    resourceName: nvidia.com/gpu
+  nodeSelector:
+    cloud.google.com/gke-accelerator: nvidia-tesla-t4
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: ""  # Workload Identity SA

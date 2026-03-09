@@ -17,7 +17,8 @@ CloudShift is an enterprise-grade refactoring accelerator that automatically tra
 - **Deterministic & Auditable** — Traceable changes with line-by-line audit trail. White-box, not black-box.
 - **Full End-to-End** — From detection to production validation. No residual cloud references.
 - **Secure by Design** — Zero external API calls. All processing happens inside your network.
-- **Hybrid AI Architecture** — 60+ compiled YAML pattern rules (Rust core) with optional local LLM assist via Ollama. The LLM never operates unsupervised.
+- **Hybrid AI Architecture** — 134 compiled YAML pattern rules (Rust core) with optional local LLM assist via Ollama. The LLM never operates unsupervised.
+- **Cloud-Agnostic Deployment** — Single Helm chart deploys to AWS (EKS), Azure (AKS), or GCP (GKE) with per-cloud value overrides.
 
 ---
 
@@ -26,7 +27,7 @@ CloudShift is an enterprise-grade refactoring accelerator that automatically tra
 CloudShift uses a five-stage pipeline:
 
 1. **Scan** — Parse source code (Python, TypeScript, Terraform, CloudFormation) using tree-sitter. Detect AWS/Azure service usage with high-confidence pattern matching.
-2. **Plan** — Match detected constructs against 60+ migration patterns. Generate a dependency-aware transformation plan with confidence scores.
+2. **Plan** — Match detected constructs against 134 migration patterns. Generate a dependency-aware transformation plan with confidence scores.
 3. **Apply** — Execute deterministic, repeatable code transformations. Produce unified diffs for every change.
 4. **Validate** — AST equivalence checking, residual cloud reference scanning, SDK surface coverage verification, and optional test suite execution.
 5. **Report** — Generate auditable migration reports with per-file confidence scores and issue tracking.
@@ -115,7 +116,7 @@ cloudshift report <project-id>
 | Terraform HCL | aws_*, azurerm_* | Full support |
 | CloudFormation | JSON/YAML templates | Full support |
 
-### Service Mappings (60+ patterns)
+### Service Mappings (134 patterns)
 
 | AWS / Azure | GCP Equivalent |
 |-------------|----------------|
@@ -180,9 +181,10 @@ cloudshift/
 │   └── presentation/         # CLI (Typer), REST API (FastAPI), WebSocket
 ├── ui/                       # React 19 + Vite + shadcn/ui Web UI
 ├── vscode-extension/         # VS Code extension
-├── patterns/                 # 60+ YAML migration pattern rules
+├── patterns/                 # 134 YAML migration pattern rules
 ├── tests/                    # 690+ tests across all layers
 ├── docker/                   # Dockerfile + docker-compose.yml
+├── deploy/helm/              # Helm chart + cloud-specific value overrides
 └── docs/                     # Ollama integration, architecture docs
 ```
 
@@ -201,19 +203,74 @@ make docker         # Build Docker image
 
 ## Deployment
 
+CloudShift ships as a single Docker image with a cloud-agnostic Helm chart. One artifact runs on any cloud — AWS, Azure, or GCP.
+
+### Docker
+
+The multi-stage Dockerfile builds all four layers into a single image:
+
+```
+Stage 1: rust:1.93        → compiles cloudshift-core (tree-sitter, pattern engine)
+Stage 2: python:3.13-slim → builds the Python wheel via Maturin (PyO3 bindings)
+Stage 3: node:22-slim     → builds the React UI (Vite production bundle)
+Stage 4: python:3.13-slim → final image with wheel + static assets + patterns
+```
+
+```bash
+# Standalone (no LLM)
+docker compose up app-standalone
+
+# Full stack with Ollama LLM
+docker compose --profile full up -d
+```
+
+### Kubernetes (Helm)
+
+A single Helm chart deploys CloudShift to any Kubernetes cluster. Cloud-specific differences (ingress controller, storage class, GPU scheduling, workload identity) are handled via value override files — no separate chart versions needed.
+
+```bash
+# Deploy to AWS (EKS)
+helm install cloudshift ./deploy/helm/cloudshift -f deploy/helm/values-aws.yaml
+
+# Deploy to GCP (GKE)
+helm install cloudshift ./deploy/helm/cloudshift -f deploy/helm/values-gcp.yaml
+
+# Deploy to Azure (AKS)
+helm install cloudshift ./deploy/helm/cloudshift -f deploy/helm/values-azure.yaml
+```
+
+**What each override configures:**
+
+| | AWS (EKS) | GCP (GKE) | Azure (AKS) |
+|---|---|---|---|
+| Ingress | ALB (internet-facing) | GCE + managed cert | nginx + cert-manager |
+| Storage | gp3 (EBS CSI) | standard-rwo (PD) | managed-csi (Azure Disk) |
+| GPU nodes | g5.xlarge (A10G) | nvidia-tesla-t4 | gpu agent pool |
+| Identity | IRSA role ARN | Workload Identity SA | Workload Identity client ID |
+| TLS | ACM certificate ARN | GKE managed certificate | Let's Encrypt (cert-manager) |
+
+**Chart components:**
+- API deployment (2 replicas, health probes, PVC for data)
+- Ollama deployment with GPU scheduling, init container for model pull, custom Modelfile via ConfigMap
+- Ingress with cloud-agnostic className override
+- ServiceAccount with annotation support for cloud IAM (IRSA / Workload Identity)
+
 ### On-Premises / Air-Gapped
 
 CloudShift is designed for air-gapped environments:
 
-1. Build the distribution on a machine with internet access
-2. Transfer via USB or secure file transfer
-3. Deploy with Docker or install directly
-4. Optionally include the Ollama model bundle (see [scripts/export-model.sh](scripts/export-model.sh))
+1. Build the Docker image on a machine with internet access
+2. `docker save cloudshift:latest | gzip > cloudshift.tar.gz`
+3. Transfer via USB or secure file transfer
+4. `docker load < cloudshift.tar.gz`
+5. Optionally bundle the Ollama model (see [scripts/export-model.sh](scripts/export-model.sh))
 
-### Docker
+For air-gapped Kubernetes, push images to an internal registry and set `global.imageRegistry` in values:
 
 ```bash
-docker compose up -d    # Starts CloudShift + optional Ollama
+helm install cloudshift ./deploy/helm/cloudshift \
+  --set global.imageRegistry=registry.internal.corp \
+  -f deploy/helm/values-aws.yaml
 ```
 
 ### Hardware Requirements

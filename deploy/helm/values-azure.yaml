@@ -1,0 +1,37 @@
+# ── Azure (AKS) Overrides ────────────────────────────────────────
+# Usage: helm install cloudshift ./cloudshift -f values-azure.yaml
+
+global:
+  imageRegistry: ""  # set to your ACR: cloudshift.azurecr.io
+
+ingress:
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  host: cloudshift.example.com
+  tls:
+    enabled: true
+    secretName: cloudshift-tls
+
+api:
+  persistence:
+    storageClass: managed-csi   # Azure Disk CSI
+
+ollama:
+  persistence:
+    storageClass: managed-csi
+  gpu:
+    enabled: true
+    count: 1
+    resourceName: nvidia.com/gpu
+  nodeSelector:
+    agentpool: gpu              # AKS GPU node pool name
+  tolerations:
+    - key: sku
+      operator: Equal
+      value: gpu
+      effect: NoSchedule
+
+serviceAccount:
+  annotations:
+    azure.workload.identity/client-id: ""  # Workload Identity client ID
