@@ -49,6 +49,10 @@ class Settings(BaseSettings):
         le=1.0,
         description="Minimum confidence score required for a detection to be included in results.",
     )
+    allowed_test_commands: list[str] = Field(
+        default=["npm test", "pytest", "cargo test", "go test"],
+        description="Whitelist of allowed test commands for validation to prevent RCE.",
+    )
 
     # -- API / Security --
     api_key: str | None = Field(default=None, description="Static API key for authentication.")

@@ -66,14 +66,23 @@ def get_apply_use_case(container: Any = Depends(get_container)):
     )
 
 
-def get_validate_use_case(container: Any = Depends(get_container)):
+def get_validate_use_case(container: Any = Depends(get_container), settings: Any = Depends(get_settings)):
     from cloudshift.application.use_cases.validate_transformation import ValidateTransformationUseCase
 
-    return ValidateTransformationUseCase(
-        validation=container.validation,
-        parser=container.parser,
-        fs=container.file_system,
-    )
+    # Use the container's resolver to ensure consistent wiring with CLI
+    # but override with current request-scope settings if needed (though settings are global here)
+    # Since container.resolve creates a new instance each time, this is safe.
+    from cloudshift.infrastructure.config.dependency_injection import Container
+    
+    # We can cast container to Container for type checking if needed, but it's Any here.
+    # The container in app.state is already configured with settings.
+    # So we can just delegate to container.resolve if it supports the class.
+    
+    # However, container.resolve returns a factory lambda in the current implementation,
+    # wait, no, it calls factory() at the end: `return factory()`.
+    # So we can just use container.resolve(ValidateTransformationUseCase).
+    
+    return container.resolve(ValidateTransformationUseCase)
 
 
 def get_patterns_use_case(container: Any = Depends(get_container)):

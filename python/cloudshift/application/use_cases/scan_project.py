@@ -62,7 +62,9 @@ class ScanProjectUseCase:
         self._fs = fs
         self._parser = parser
         self._detector = detector
-        self._allowed_paths = [p.resolve() for p in (allowed_paths or [])]
+        # Security: If no paths are explicitly allowed, default to restricting to current working directory
+        allowed_list = allowed_paths if allowed_paths else [Path(".")]
+        self._allowed_paths = [p.resolve() for p in allowed_list]
         self._min_confidence = min_confidence
         self._event_bus = event_bus
 
@@ -72,10 +74,11 @@ class ScanProjectUseCase:
         # Security: Resolve and validate path to prevent traversal
         try:
             root_path = Path(request.root_path).resolve()
-            if self._allowed_paths:
-                is_allowed = any(root_path == p or p in root_path.parents for p in self._allowed_paths)
-                if not is_allowed:
-                    raise ValueError(f"Access denied to path: {request.root_path}")
+            # Always enforce path restrictions
+            is_allowed = any(root_path == p or p in root_path.parents for p in self._allowed_paths)
+            if not is_allowed:
+                allowed_str = ", ".join(str(p) for p in self._allowed_paths)
+                raise ValueError(f"Access denied to path: {request.root_path}. Allowed roots: {allowed_str}")
         except Exception as exc:
              return ScanResult(
                 project_id=project_id,

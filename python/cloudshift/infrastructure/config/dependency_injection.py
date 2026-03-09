@@ -204,6 +204,7 @@ class Container:
                 sdk_checker=self.validation,
                 test_runner=self.test_runner,
                 transform_store=self.project_repository,
+                allowed_test_commands=self._settings.allowed_test_commands,
             ),
             ManagePatternsUseCase: lambda: ManagePatternsUseCase(
                 pattern_store=self.pattern_store,

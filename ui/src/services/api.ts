@@ -11,6 +11,7 @@ import type {
   ProjectConfig,
   ScanResult,
   ValidationResult,
+  JobAccepted,
 } from "../types";
 
 const BASE = "/api";
@@ -18,112 +19,43 @@ const BASE = "/api";
 /* ------------------------------------------------------------------ */
 /*  Generic helpers                                                    */
 /* ------------------------------------------------------------------ */
-
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<ApiResponse<T>> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options.headers },
-    ...options,
-  });
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    return {
-      data: undefined as unknown as T,
-      success: false,
-      error: (body as Record<string, string>).detail ?? res.statusText,
-    };
-  }
-
-  const data: T = await res.json();
-  return { data, success: true };
-}
-
-function get<T>(path: string) {
-  return request<T>(path);
-}
-
-function post<T>(path: string, body?: unknown) {
-  return request<T>(path, {
-    method: "POST",
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}
-
-function put<T>(path: string, body: unknown) {
-  return request<T>(path, { method: "PUT", body: JSON.stringify(body) });
-}
-
-function del<T>(path: string) {
-  return request<T>(path, { method: "DELETE" });
-}
-
-/* ------------------------------------------------------------------ */
-/*  Project endpoints                                                  */
-/* ------------------------------------------------------------------ */
-
-export const projectApi = {
-  list: () => get<Project[]>("/projects"),
-  get: (id: string) => get<Project>(`/projects/${id}`),
-  create: (data: Partial<Project>) => post<Project>("/projects", data),
-  update: (id: string, data: Partial<Project>) =>
-    put<Project>(`/projects/${id}`, data),
-  delete: (id: string) => del<void>(`/projects/${id}`),
-  updateConfig: (id: string, config: Partial<ProjectConfig>) =>
-    put<ProjectConfig>(`/projects/${id}/config`, config),
-};
-
-/* ------------------------------------------------------------------ */
-/*  Manifest endpoints                                                 */
-/* ------------------------------------------------------------------ */
-
-export const manifestApi = {
-  get: (projectId: string) => get<Manifest>(`/projects/${projectId}/manifest`),
-  getEntry: (projectId: string, entryId: string) =>
-    get<ManifestEntry>(`/projects/${projectId}/manifest/entries/${entryId}`),
-  listEntries: (
-    projectId: string,
-    params?: { status?: string; resourceType?: string; page?: number; pageSize?: number },
-  ) => {
-    const query = new URLSearchParams();
-    if (params?.status) query.set("status", params.status);
-    if (params?.resourceType) query.set("resource_type", params.resourceType);
-    if (params?.page) query.set("page", String(params.page));
-    if (params?.pageSize) query.set("page_size", String(params.pageSize));
-    const qs = query.toString();
-    return get<PaginatedResponse<ManifestEntry>>(
-      `/projects/${projectId}/manifest/entries${qs ? `?${qs}` : ""}`,
-    );
-  },
-};
+// ... existing code ...
 
 /* ------------------------------------------------------------------ */
 /*  Scan / Plan / Apply endpoints                                      */
 /* ------------------------------------------------------------------ */
 
 export const scanApi = {
-  start: (projectId: string) =>
-    post<ScanResult>(`/projects/${projectId}/scan`),
-  status: (projectId: string, scanId: string) =>
-    get<ScanResult>(`/projects/${projectId}/scan/${scanId}`),
+  start: (rootPath: string, sourceProvider: string, targetProvider: string) =>
+    post<JobAccepted>("/scan", {
+      root_path: rootPath,
+      source_provider: sourceProvider,
+      target_provider: targetProvider,
+    }),
+  status: (jobId: string) =>
+    get<ScanResult>(`/scan/${jobId}`),
 };
 
 export const planApi = {
-  create: (projectId: string) =>
-    post<PlanResult>(`/projects/${projectId}/plan`),
-  get: (projectId: string, planId: string) =>
-    get<PlanResult>(`/projects/${projectId}/plan/${planId}`),
-  getDiffs: (projectId: string, planId: string) =>
-    get<FileDiff[]>(`/projects/${projectId}/plan/${planId}/diffs`),
+  create: (projectId: string, manifestId: string) =>
+    post<JobAccepted>("/plan", {
+      project_id: projectId,
+      manifest_id: manifestId,
+    }),
+  get: (jobId: string) =>
+    get<PlanResult>(`/plan/${jobId}`),
+  // getDiffs kept same if backend supports it or needs update?
+  // Backend `PlanResult` has diffs inside?
+  // Let's check schemas.py `PlanResultResponse` -> no diffs, it has steps.
+  // Apply returns diffs.
+  // We'll leave getDiffs alone for now or remove if unused.
 };
 
 export const applyApi = {
-  start: (projectId: string, planId: string) =>
-    post<ApplyResult>(`/projects/${projectId}/apply`, { planId }),
-  status: (projectId: string, applyId: string) =>
-    get<ApplyResult>(`/projects/${projectId}/apply/${applyId}`),
+  start: (planId: string) =>
+    post<JobAccepted>("/apply", { plan_id: planId }),
+  status: (jobId: string) =>
+    get<ApplyResult>(`/apply/${jobId}`),
 };
 
 /* ------------------------------------------------------------------ */
@@ -131,14 +63,10 @@ export const applyApi = {
 /* ------------------------------------------------------------------ */
 
 export const validationApi = {
-  run: (projectId: string) =>
-    post<ValidationResult>(`/projects/${projectId}/validate`),
-  get: (projectId: string, validationId: string) =>
-    get<ValidationResult>(
-      `/projects/${projectId}/validate/${validationId}`,
-    ),
-  latest: (projectId: string) =>
-    get<ValidationResult>(`/projects/${projectId}/validate/latest`),
+  start: (planId: string) =>
+    post<JobAccepted>("/validate", { plan_id: planId }),
+  status: (jobId: string) =>
+    get<ValidationResult>(`/validate/${jobId}`),
 };
 
 /* ------------------------------------------------------------------ */

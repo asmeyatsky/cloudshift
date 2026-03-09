@@ -97,6 +97,7 @@ class ValidateTransformationUseCase:
         test_runner: TestRunner | None = None,
         transform_store: TransformationStore | None = None,
         event_bus: EventPublisher | None = None,
+        allowed_test_commands: list[str] | None = None,
     ) -> None:
         self._ast = ast_validator
         self._residual = residual_scanner
@@ -104,9 +105,19 @@ class ValidateTransformationUseCase:
         self._test_runner = test_runner
         self._store = transform_store
         self._event_bus = event_bus
+        self._allowed_test_commands = set(allowed_test_commands or [])
 
     async def execute(self, request: ValidationRequest) -> ValidationResult:
         await self._emit({"type": "ValidationStarted", "plan_id": request.plan_id})
+
+        if request.run_tests and request.test_command:
+            if request.test_command not in self._allowed_test_commands:
+                # Security: Fail immediately if command is not whitelisted
+                return ValidationResult(
+                    plan_id=request.plan_id,
+                    passed=False,
+                    error=f"Command '{request.test_command}' is not in the allowed validation commands list.",
+                )
 
         issues: list[IssueDTO] = []
         ast_equivalent: bool | None = None

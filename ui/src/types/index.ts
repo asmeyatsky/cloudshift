@@ -147,14 +147,18 @@ export interface FileDiff {
 
 /* ---------------------- Scan / Plan / Apply ----------------------- */
 
+export interface JobAccepted {
+  job_id: string;
+  status: string;
+}
+
 export interface ScanResult {
-  id: string;
-  projectPath: string;
-  filesScanned: number;
-  resourcesFound: number;
-  duration: number;
-  entries: ManifestEntry[];
-  timestamp: string;
+  project_id: string;
+  root_path: string;
+  files: unknown[]; // TODO: Type this properly if needed
+  total_files_scanned: number;
+  services_found: string[];
+  error?: string;
 }
 
 export interface PlanResult {

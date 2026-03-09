@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +59,17 @@ class ScanRequestBody(BaseModel):
     languages: list[LanguageParam] = Field(default_factory=list)
     exclude_patterns: list[str] = Field(default_factory=list)
 
+    @model_validator(mode='before')
+    @classmethod
+    def uppercase_enums(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for field in ('source_provider', 'target_provider'):
+                if field in data and isinstance(data[field], str):
+                    data[field] = data[field].upper()
+            if 'languages' in data and isinstance(data['languages'], list):
+                data['languages'] = [l.upper() if isinstance(l, str) else l for l in data['languages']]
+        return data
+
 
 class FileEntryResponse(BaseModel):
     path: str
@@ -65,6 +77,13 @@ class FileEntryResponse(BaseModel):
     services_detected: list[str] = Field(default_factory=list)
     confidence: float = 0.0
     line_count: int = 0
+
+
+class ScanFileRequestBody(BaseModel):
+    file_path: str = Field(alias="filePath")
+    content: str
+
+    model_config = {"populate_by_name": True}
 
 
 class ScanResultResponse(BaseModel):
@@ -76,6 +95,32 @@ class ScanResultResponse(BaseModel):
     total_files_scanned: int = 0
     services_found: list[str] = Field(default_factory=list)
     error: str | None = None
+
+
+class PatternMatchResponse(BaseModel):
+    line: int
+    end_line: int
+    column: int
+    end_column: int
+    pattern_id: str
+    pattern_name: str
+    severity: str
+    message: str
+    source_provider: str
+    target_provider: str
+
+    model_config = {"populate_by_name": True}
+
+    # Aliases for camelCase output (VS Code extension expects camelCase)
+    class Config:
+        alias_generator = lambda x: "".join(word.capitalize() if i > 0 else word for i, word in enumerate(x.split("_")))
+
+
+class FileScanResultResponse(BaseModel):
+    file: str
+    patterns: list[PatternMatchResponse] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
 
 
 # ---------------------------------------------------------------------------

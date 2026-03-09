@@ -16,7 +16,7 @@ import type {
 export const SEED_PROJECT: Project = {
   id: "proj-a1b2c3d4",
   name: "payments-service",
-  path: "/srv/payments-service",
+  path: "demos/aws_python_microservice/input",
   sourceProvider: "aws",
   targetProvider: "gcp",
   config: {

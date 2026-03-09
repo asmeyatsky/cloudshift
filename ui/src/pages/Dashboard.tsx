@@ -24,6 +24,7 @@ import {
   useOperationStore,
   useValidationStore,
 } from "../store";
+import { useScan } from "../hooks/useScan";
 import {
   SEED_ENTRIES,
   SEED_SCAN_RESULT,
@@ -81,6 +82,8 @@ export default function Dashboard() {
   const validationResult = useValidationStore((s) => s.result);
   const setValidationResult = useValidationStore((s) => s.setResult);
 
+  const { startScan } = useScan();
+
   const [activityLog, setActivityLog] = useState<LogEntry[]>([]);
   const [runningStep, setRunningStep] = useState<PipelineStep | null>(null);
   const [pipelineRunning, setPipelineRunning] = useState(false);
@@ -112,16 +115,17 @@ export default function Dashboard() {
     // ── Scan ──
     setRunningStep("scan");
     addLog(`Agent initiating project scan on ${activeProject.path}`, "agent");
-    await wait(800);
-    addLog("Scanning src/ (Python, TypeScript)...", "info");
-    await wait(700);
-    addLog("Scanning infra/ (Terraform HCL)...", "info");
-    await wait(900);
-    addLog("Detected: 3 Lambda functions, 2 DynamoDB tables, 1 SQS queue, 2 S3 buckets...", "info");
-    await wait(600);
-    setScanResult(SEED_SCAN_RESULT);
-    setEntries(SEED_ENTRIES);
-    addLog(`Scan complete: ${SEED_SCAN_RESULT.filesScanned} files, ${SEED_SCAN_RESULT.resourcesFound} resources found`, "success");
+    
+    try {
+      await startScan();
+      addLog("Scan completed successfully", "success");
+    } catch (e: any) {
+      addLog(`Scan failed: ${e.message || e}`, "warning");
+      setPipelineRunning(false);
+      setRunningStep(null);
+      return;
+    }
+    
     if (abortRef.current) { setPipelineRunning(false); setRunningStep(null); return; }
 
     // ── Plan ──
