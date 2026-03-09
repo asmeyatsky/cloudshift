@@ -78,7 +78,7 @@ export default function IssueList({ issues, onFix }: Props) {
             <button
               key={sev}
               onClick={() => setSeverityFilter(sev)}
-              className={`rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 severityFilter === sev
                   ? "bg-primary-500/15 text-primary-400"
                   : "bg-white/[0.04] text-gray-500 hover:bg-white/[0.08] hover:text-gray-300"
@@ -119,7 +119,7 @@ export default function IssueList({ issues, onFix }: Props) {
                         {issue.code}
                       </span>
                     </div>
-                    <p className="mt-1 text-sm text-gray-300">
+                    <p className="mt-1 text-base text-gray-300">
                       {issue.message}
                     </p>
                     <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
@@ -130,7 +130,7 @@ export default function IssueList({ issues, onFix }: Props) {
                     </div>
                     {issue.suggestion && (
                       <div className="mt-2 flex items-center gap-2">
-                        <p className="flex-1 rounded-lg bg-white/[0.03] px-3 py-2 text-xs text-gray-400">
+                        <p className="flex-1 rounded-lg bg-white/[0.03] px-3 py-2 text-sm text-gray-400">
                           Suggestion: {issue.suggestion}
                         </p>
                         {onFix && (

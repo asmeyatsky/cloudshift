@@ -23,11 +23,11 @@ export default function ValidationDashboard({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-xl font-semibold text-white">
             Validation Results
           </h2>
           {result && (
-            <p className="text-xs text-gray-500">
+            <p className="text-sm text-gray-500">
               Last run: {new Date(result.timestamp).toLocaleString()}
             </p>
           )}
@@ -167,7 +167,7 @@ function SummaryCard({
         {icon}
         <div>
           <p className={`text-2xl font-bold ${textStyles[color]}`}>{count}</p>
-          <p className="text-xs text-gray-500">{label}</p>
+          <p className="text-sm text-gray-500">{label}</p>
         </div>
       </div>
     </div>

@@ -22,10 +22,10 @@ export default function ValidationPage() {
   const fixData = fixIssue ? SEED_FIX_DATA[fixIssue.id] : null;
 
   return (
-    <div className="p-6">
+    <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Validation</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-3xl font-bold text-white">Validation</h1>
+        <p className="mt-1 text-base text-gray-500">
           Check migration correctness and identify potential issues
         </p>
       </div>
@@ -45,7 +45,7 @@ export default function ValidationPage() {
 
         {result && result.issues.length > 0 && (
           <div>
-            <h2 className="mb-4 text-lg font-semibold text-white">
+            <h2 className="mb-4 text-xl font-semibold text-white">
               All Issues
             </h2>
             <IssueList

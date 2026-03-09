@@ -29,10 +29,10 @@ export default function PatternsPage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Patterns</h1>
-        <p className="mt-1 text-sm text-gray-500">
+    <div className="p-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-white">Patterns</h1>
+        <p className="mt-1 text-base text-gray-500">
           Browse and explore cloud migration transformation patterns
         </p>
       </div>
