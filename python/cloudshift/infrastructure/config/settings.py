@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     patterns_dir: Path = Field(default=Path("patterns"), description="Directory containing YAML pattern files.")
     data_dir: Path = Field(default=Path("data"), description="Base directory for project data.")
     allowed_scan_paths: list[Path] = Field(
-        default=[Path("."), Path("data")],
-        description="Base paths allowed for scanning (include 'data' so snippet projects under data_dir are scannable).",
+        default=[Path("."), Path("data"), Path("/tmp/cloudshift")],
+        description="Base paths allowed for scanning (data = snippet dir; /tmp/cloudshift = imported git projects).",
     )
 
     # -- Deployment: demo (Gemini) vs client (Ollama) --
