@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +97,11 @@ class ScanResultResponse(BaseModel):
     error: str | None = None
 
 
+def _to_camel(s: str) -> str:
+    parts = s.split("_")
+    return "".join(p.capitalize() if i > 0 else p for i, p in enumerate(parts))
+
+
 class PatternMatchResponse(BaseModel):
     line: int
     end_line: int
@@ -109,11 +114,10 @@ class PatternMatchResponse(BaseModel):
     source_provider: str
     target_provider: str
 
-    model_config = {"populate_by_name": True}
-
-    # Aliases for camelCase output (VS Code extension expects camelCase)
-    class Config:
-        alias_generator = lambda x: "".join(word.capitalize() if i > 0 else word for i, word in enumerate(x.split("_")))
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=_to_camel,
+    )
 
 
 class FileScanResultResponse(BaseModel):

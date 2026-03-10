@@ -1,0 +1,84 @@
+# Build CloudShift image on Cloud Build and deploy to Google Cloud Run.
+#
+# Required GitHub secrets:
+#   GCP_SA_KEY: JSON key for the Cloud Refactor Agent service account (or any SA with:
+#     - Cloud Build Editor (to run builds)
+#     - Artifact Registry Writer (to push images)
+#     - Cloud Run Admin (to deploy)
+#     - Service Account User (to act as runtime SA)
+#
+# Optional: set GCP_PROJECT_ID if different from the one in the key.
+name: Build and Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+env:
+  GCP_PROJECT_ID: refactord-479213
+  GCP_REGION: us-central1
+  CLOUD_RUN_SERVICE: cloudshift
+  ARTIFACT_REGISTRY: us-central1-docker.pkg.dev
+
+jobs:
+  build-and-deploy:
+    name: Build image and deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY }} --quiet
+
+      - name: Build and push image
+        id: build
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          IMAGE_TAG="sha-${SHORT_SHA}"
+          IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/cloudshift/cloudshift:${IMAGE_TAG}"
+          echo "IMAGE=${IMAGE}" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          gcloud builds submit \
+            --config=cloudbuild.yaml \
+            --substitutions="_TAG=${IMAGE_TAG},_PROJECT_ID=${{ env.GCP_PROJECT_ID }}" \
+            --project="${{ env.GCP_PROJECT_ID }}" \
+            .
+
+      - name: Deploy to Cloud Run
+        run: |
+          IMAGE_TAG="${{ steps.build.outputs.IMAGE_TAG }}"
+          IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/cloudshift/cloudshift:${IMAGE_TAG}"
+          gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
+            --image="${IMAGE}" \
+            --region=${{ env.GCP_REGION }} \
+            --platform=managed \
+            --set-env-vars=CLOUDSHIFT_LLM_ENABLED=false \
+            --allow-unauthenticated \
+            --project=${{ env.GCP_PROJECT_ID }}
+
+      - name: Output service URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.CLOUD_RUN_SERVICE }} \
+            --region=${{ env.GCP_REGION }} \
+            --format='value(status.url)' \
+            --project=${{ env.GCP_PROJECT_ID }})
+          echo "Cloud Run service URL: ${URL}"

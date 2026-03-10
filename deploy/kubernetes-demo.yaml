@@ -1,0 +1,91 @@
+# Minimal Kubernetes manifest for CloudShift demo.
+# Same image as production; use on any Kubernetes (GKE, EKS, AKS, on-prem).
+# No Helm required. For production/client-site use the Helm chart.
+#
+# Usage:
+#   kubectl apply -f deploy/kubernetes-demo.yaml
+#   kubectl port-forward svc/cloudshift-demo 8000:80
+#   Open http://localhost:8000
+#
+# Override image: edit the deployment .spec.template.spec.containers[0].image
+# (e.g. your-registry/cloudshift:0.1.0)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudshift-demo
+  labels:
+    app: cloudshift
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudshift
+  template:
+    metadata:
+      labels:
+        app: cloudshift
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: cloudshift:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: CLOUDSHIFT_PATTERNS_DIR
+              value: /app/patterns
+            - name: CLOUDSHIFT_DATA_DIR
+              value: /app/data
+            - name: CLOUDSHIFT_DB_PATH
+              value: /app/data/cloudshift.db
+            - name: CLOUDSHIFT_STATIC_DIR
+              value: /app/static
+            - name: CLOUDSHIFT_LOG_LEVEL
+              value: info
+            - name: CLOUDSHIFT_LLM_ENABLED
+              value: "false"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudshift-demo
+  labels:
+    app: cloudshift
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: cloudshift

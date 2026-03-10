@@ -1,0 +1,25 @@
+# Build CloudShift image on Cloud Build (amd64) and push to Artifact Registry.
+# Substitutions (set by CI or default):
+#   _TAG: image tag (default 0.1.0)
+#   _PROJECT_ID: GCP project (default refactord-479213)
+substitutions:
+  _TAG: '0.1.0'
+  _PROJECT_ID: 'refactord-479213'
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/${_PROJECT_ID}/cloudshift/cloudshift:${_TAG}'
+      - '-f'
+      - 'docker/Dockerfile'
+      - '.'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/${_PROJECT_ID}/cloudshift/cloudshift:${_TAG}'
+images:
+  - 'us-central1-docker.pkg.dev/${_PROJECT_ID}/cloudshift/cloudshift:${_TAG}'
+options:
+  logging: CLOUD_LOGGING_ONLY

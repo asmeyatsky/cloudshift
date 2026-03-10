@@ -184,7 +184,7 @@ cloudshift/
 ├── patterns/                 # 134 YAML migration pattern rules
 ├── tests/                    # 690+ tests across all layers
 ├── docker/                   # Dockerfile + docker-compose.yml
-├── deploy/helm/              # Helm chart + cloud-specific value overrides
+├── deploy/                   # kubernetes-demo.yaml (demo) + helm/ (production, any K8s)
 └── docs/                     # Ollama integration, architecture docs
 ```
 
@@ -203,11 +203,14 @@ make docker         # Build Docker image
 
 ## Deployment
 
-CloudShift ships as a single Docker image with a cloud-agnostic Helm chart. One artifact runs on any cloud — AWS, Azure, or GCP.
+CloudShift ships as **one Docker image** for both **demo** and **production**. Long-term it is deployed on client site (on-prem or air-gapped) as this image; demos use the same image via Docker or any Kubernetes cluster.
 
-### Docker
+- **Demo:** Run the image with Docker, deploy to [Cloud Run](docs/demo.md#demo-deploy-to-cloud-run), or use the [minimal Kubernetes manifest](deploy/kubernetes-demo.yaml) on any cluster. See [docs/demo.md](docs/demo.md).
+- **Production / client-site:** Deploy the same image with the **Helm chart** on the client’s Kubernetes (GKE, EKS, AKS, or on-prem). The chart is Kubernetes-flavour agnostic; cloud-specific behaviour is in value overrides.
 
-The multi-stage Dockerfile builds all four layers into a single image:
+### Docker image
+
+The multi-stage Dockerfile produces a single image (API + Web UI + patterns):
 
 ```
 Stage 1: rust:1.93        → compiles cloudshift-core (tree-sitter, pattern engine)
@@ -217,6 +220,17 @@ Stage 4: python:3.13-slim → final image with wheel + static assets + patterns
 ```
 
 ```bash
+# Build
+docker build -t cloudshift:0.1.0 -f docker/Dockerfile .
+
+# Demo: run locally (no LLM)
+docker run -d -p 8000:8000 -e CLOUDSHIFT_LLM_ENABLED=false -v cloudshift-data:/app/data cloudshift:0.1.0
+# Web UI: http://localhost:8000
+```
+
+Or use docker-compose from the repo:
+
+```bash
 # Standalone (no LLM)
 docker compose up app-standalone
 
@@ -224,9 +238,18 @@ docker compose up app-standalone
 docker compose --profile full up -d
 ```
 
-### Kubernetes (Helm)
+### Kubernetes (any flavour)
 
-A single Helm chart deploys CloudShift to any Kubernetes cluster. Cloud-specific differences (ingress controller, storage class, GPU scheduling, workload identity) are handled via value override files — no separate chart versions needed.
+**Demo (minimal, no Helm):** Deploy on any cluster, then port-forward:
+
+```bash
+kubectl apply -f deploy/kubernetes-demo.yaml
+kubectl port-forward svc/cloudshift-demo 8000:80
+```
+
+Override the image in the manifest if you use a different tag or registry. See [docs/demo.md](docs/demo.md).
+
+**Production / client-site (Helm):** One chart for GKE, EKS, AKS, or on-prem. Use the value override that matches the environment:
 
 ```bash
 # Deploy to AWS (EKS)
@@ -237,6 +260,11 @@ helm install cloudshift ./deploy/helm/cloudshift -f deploy/helm/values-gcp.yaml
 
 # Deploy to Azure (AKS)
 helm install cloudshift ./deploy/helm/cloudshift -f deploy/helm/values-azure.yaml
+
+# On-prem / air-gapped: use client registry
+helm install cloudshift ./deploy/helm/cloudshift \
+  --set global.imageRegistry=registry.internal.corp \
+  -f deploy/helm/values-gcp.yaml
 ```
 
 **What each override configures:**
@@ -249,29 +277,18 @@ helm install cloudshift ./deploy/helm/cloudshift -f deploy/helm/values-azure.yam
 | Identity | IRSA role ARN | Workload Identity SA | Workload Identity client ID |
 | TLS | ACM certificate ARN | GKE managed certificate | Let's Encrypt (cert-manager) |
 
-**Chart components:**
-- API deployment (2 replicas, health probes, PVC for data)
-- Ollama deployment with GPU scheduling, init container for model pull, custom Modelfile via ConfigMap
-- Ingress with cloud-agnostic className override
-- ServiceAccount with annotation support for cloud IAM (IRSA / Workload Identity)
+**Chart components:** API deployment (replicas, health probes, PVC), optional Ollama with GPU, Ingress, ServiceAccount for cloud IAM.
 
 ### On-Premises / Air-Gapped
 
-CloudShift is designed for air-gapped environments:
+Same image; transfer and load on the client network:
 
-1. Build the Docker image on a machine with internet access
-2. `docker save cloudshift:latest | gzip > cloudshift.tar.gz`
-3. Transfer via USB or secure file transfer
+1. Build the Docker image on a machine with internet access.
+2. `docker save cloudshift:0.1.0 | gzip > cloudshift.tar.gz`
+3. Transfer via USB or secure file transfer.
 4. `docker load < cloudshift.tar.gz`
-5. Optionally bundle the Ollama model (see [scripts/export-model.sh](scripts/export-model.sh))
-
-For air-gapped Kubernetes, push images to an internal registry and set `global.imageRegistry` in values:
-
-```bash
-helm install cloudshift ./deploy/helm/cloudshift \
-  --set global.imageRegistry=registry.internal.corp \
-  -f deploy/helm/values-aws.yaml
-```
+5. Push to the client’s internal registry (if using Kubernetes), or run with Docker. For Kubernetes, use the Helm chart with `global.imageRegistry` set to the client registry.
+6. Optionally bundle the Ollama model (see [scripts/export-model.sh](scripts/export-model.sh)).
 
 ### Hardware Requirements
 
