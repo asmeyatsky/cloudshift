@@ -1,13 +1,11 @@
-# Build CloudShift image on Cloud Build and deploy to Google Cloud Run.
+# Build CloudShift image with Docker on the runner and deploy to Google Cloud Run.
+# No Cloud Build; only Artifact Registry + Cloud Run permissions needed.
 #
 # Required GitHub secrets:
-#   GCP_SA_KEY: JSON key for the Cloud Refactor Agent service account (or any SA with:
-#     - Cloud Build Editor (to run builds)
-#     - Artifact Registry Writer (to push images)
-#     - Cloud Run Admin (to deploy)
-#     - Service Account User (to act as runtime SA)
-#
-# Optional: set GCP_PROJECT_ID if different from the one in the key.
+#   GCP_SA_KEY: JSON key for the Cloud Refactor Agent service account with:
+#     - Artifact Registry Writer (push images)
+#     - Cloud Run Admin (deploy)
+#     - Service Account User (Cloud Run runtime)
 name: Build and Deploy to Cloud Run
 
 on:
@@ -35,7 +33,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
-        id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
@@ -57,11 +54,8 @@ jobs:
           IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/cloudshift/cloudshift:${IMAGE_TAG}"
           echo "IMAGE=${IMAGE}" >> $GITHUB_OUTPUT
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          gcloud builds submit \
-            --config=cloudbuild.yaml \
-            --substitutions="_TAG=${IMAGE_TAG},_PROJECT_ID=${{ env.GCP_PROJECT_ID }}" \
-            --project="${{ env.GCP_PROJECT_ID }}" \
-            .
+          docker build -t "${IMAGE}" -f docker/Dockerfile .
+          docker push "${IMAGE}"
 
       - name: Deploy to Cloud Run
         run: |

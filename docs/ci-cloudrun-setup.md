@@ -8,15 +8,11 @@ CI uses the existing **Cloud Refactor Agent** service account. Ensure it has the
 
 ### 1. Grant roles to Cloud Refactor Agent (if not already present)
 
-Use the service account email for "Cloud Refactor Agent" (e.g. `cloud-refactor-agent@refactord-479213.iam.gserviceaccount.com` — confirm in **IAM & Admin → Service Accounts**). Then:
+CI builds the image with Docker on the runner and pushes to Artifact Registry (no Cloud Build). Use the service account email for "Cloud Refactor Agent" (e.g. `cloud-refactor-agent@refactord-479213.iam.gserviceaccount.com` — confirm in **IAM & Admin → Service Accounts**). Then:
 
 ```bash
 # Replace with your Cloud Refactor Agent SA email if different
 export SA="cloud-refactor-agent@refactord-479213.iam.gserviceaccount.com"
-
-gcloud projects add-iam-policy-binding refactord-479213 \
-  --member="serviceAccount:${SA}" \
-  --role="roles/cloudbuild.builds.builder"
 
 gcloud projects add-iam-policy-binding refactord-479213 \
   --member="serviceAccount:${SA}" \
@@ -29,15 +25,6 @@ gcloud projects add-iam-policy-binding refactord-479213 \
 gcloud projects add-iam-policy-binding refactord-479213 \
   --member="serviceAccount:${SA}" \
   --role="roles/iam.serviceAccountUser"
-
-# Required for gcloud builds submit (upload source to Cloud Build bucket)
-gcloud projects add-iam-policy-binding refactord-479213 \
-  --member="serviceAccount:${SA}" \
-  --role="roles/serviceusage.serviceUsageConsumer"
-
-gcloud projects add-iam-policy-binding refactord-479213 \
-  --member="serviceAccount:${SA}" \
-  --role="roles/storage.objectAdmin"
 ```
 
 ### 2. Create a JSON key and add it to GitHub Secrets
@@ -59,7 +46,7 @@ gcloud iam service-accounts keys create github-actions-key.json \
 
 Push to the `main` (or `master`) branch. The workflow will:
 
-1. Build the image on Cloud Build (tag: `sha-<short-sha>`)
+1. Build the image with Docker on the runner (tag: `sha-<short-sha>`)
 2. Push to Artifact Registry
 3. Deploy the new image to Cloud Run
 
