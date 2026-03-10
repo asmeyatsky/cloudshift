@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+DeploymentMode = Literal["demo", "client"]
+AuthMode = Literal["api_key", "searce_id", "password"]
 
 
 class Settings(BaseSettings):
@@ -30,15 +35,24 @@ class Settings(BaseSettings):
     patterns_dir: Path = Field(default=Path("patterns"), description="Directory containing YAML pattern files.")
     data_dir: Path = Field(default=Path("data"), description="Base directory for project data.")
     allowed_scan_paths: list[Path] = Field(
-        default=[Path(".")],
-        description="List of base paths allowed for scanning. Paths must be children of these.",
+        default=[Path("."), Path("data")],
+        description="Base paths allowed for scanning (include 'data' so snippet projects under data_dir are scannable).",
     )
 
-    # -- LLM --
-    llm_enabled: bool = Field(default=False, description="Enable LLM-assisted transformations.")
+    # -- Deployment: demo (Gemini) vs client (Ollama) --
+    deployment_mode: DeploymentMode = Field(
+        default="client",
+        description="demo = Gemini API; client = Ollama (e.g. Qwen 2).",
+    )
+    # -- LLM (client: Ollama) --
+    llm_enabled: bool = Field(default=False, description="Enable LLM-assisted transformations (client mode).")
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama API base URL.")
-    ollama_model: str = Field(default="codellama:13b", description="Ollama model name.")
+    ollama_model: str = Field(default="qwen2:latest", description="Ollama model name (e.g. qwen2:latest).")
     ollama_timeout: float = Field(default=120.0, description="Ollama request timeout in seconds.")
+    # -- LLM (demo: Gemini) --
+    gemini_api_key: str | None = Field(default=None, description="Google Gemini API key (demo mode).")
+    gemini_model: str = Field(default="gemini-1.5-flash", description="Gemini model name.")
+    gemini_timeout: float = Field(default=120.0, description="Gemini request timeout in seconds.")
 
     # -- Validation --
     test_timeout: int = Field(default=300, description="Test runner timeout in seconds.")
@@ -58,7 +72,16 @@ class Settings(BaseSettings):
     static_dir: Path = Field(default=Path("static"), description="Directory for static assets (index.html, etc.).")
 
     # -- API / Security --
-    api_key: str | None = Field(default=None, description="Static API key for authentication.")
+    auth_mode: AuthMode = Field(
+        default="api_key",
+        description="api_key = single key; searce_id = demo (Searce ID); password = client (user/password).",
+    )
+    api_key: str | None = Field(default=None, description="Static API key (when auth_mode=api_key).")
+    searce_id_issuer: str | None = Field(default=None, description="Searce ID OAuth issuer URL (demo).")
+    searce_id_audience: str | None = Field(default=None, description="Searce ID audience (demo).")
+    users_file: Path | None = Field(default=None, description="Path to JSON file of {username: password_hash} (auth_mode=password).")
+    jwt_secret: str = Field(default="change-me-in-production", description="Secret for signing JWT (password auth).")
+    jwt_ttl_seconds: int = Field(default=86400, description="JWT lifetime in seconds.")
     allowed_origins: list[str] = Field(
         default=["http://localhost:3000", "http://localhost:5173", "vscode-webview://*"],
         description="Allowed CORS origins.",

@@ -12,6 +12,7 @@ from cloudshift.infrastructure.config.settings import Settings
 # -- Concrete adapter imports (only place these appear) ---------------------
 from cloudshift.infrastructure.file_system.local_fs import LocalFileSystem
 from cloudshift.infrastructure.file_system.git_safety import GitSafety
+from cloudshift.infrastructure.llm.gemini_adapter import GeminiAdapter
 from cloudshift.infrastructure.llm.null_adapter import NullLLMAdapter
 from cloudshift.infrastructure.llm.ollama_adapter import OllamaAdapter
 from cloudshift.infrastructure.pattern_store.local_store import LocalPatternStore
@@ -111,7 +112,7 @@ class Container:
     # -- LLM port -----------------------------------------------------------
 
     @property
-    def llm(self) -> OllamaAdapter | NullLLMAdapter:
+    def llm(self) -> GeminiAdapter | OllamaAdapter | NullLLMAdapter:
         return self._get_or_create("llm", self._make_llm)
 
     # -- Factory methods ----------------------------------------------------
@@ -156,7 +157,13 @@ class Container:
     def _make_pattern_store(self) -> LocalPatternStore:
         return LocalPatternStore(directory=self._settings.patterns_dir)
 
-    def _make_llm(self) -> OllamaAdapter | NullLLMAdapter:
+    def _make_llm(self) -> GeminiAdapter | OllamaAdapter | NullLLMAdapter:
+        if self._settings.deployment_mode == "demo" and self._settings.gemini_api_key:
+            return GeminiAdapter(
+                api_key=self._settings.gemini_api_key,
+                model=self._settings.gemini_model,
+                timeout=self._settings.gemini_timeout,
+            )
         if self._settings.llm_enabled:
             return OllamaAdapter(
                 base_url=self._settings.ollama_base_url,

@@ -1256,6 +1256,111 @@ class TestOllamaAdapter:
 
 
 # ===================================================================
+# 7b. GeminiAdapter
+# ===================================================================
+
+class TestGeminiAdapter:
+    """Tests for gemini_adapter.py (demo mode LLM)."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_httpx(self):
+        with patch("cloudshift.infrastructure.llm.gemini_adapter.httpx") as mock_httpx:
+            self.mock_httpx = mock_httpx
+            self.mock_client = MagicMock()
+            self.mock_client.post = AsyncMock()
+            self.mock_client.aclose = AsyncMock()
+            mock_httpx.AsyncClient.return_value = self.mock_client
+            yield
+
+    def _get_adapter(self):
+        from cloudshift.infrastructure.llm.gemini_adapter import GeminiAdapter
+        return GeminiAdapter(api_key="test-key", model="gemini-1.5-flash", timeout=30.0)
+
+    def _gemini_response(self, text: str):
+        return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
+
+    def test_init(self):
+        adapter = self._get_adapter()
+        assert adapter._api_key == "test-key"
+        assert adapter._model == "gemini-1.5-flash"
+
+    def test_url_includes_api_key_and_model(self):
+        adapter = self._get_adapter()
+        url = adapter._url()
+        assert "test-key" in url
+        assert "gemini-1.5-flash" in url
+        assert "generateContent" in url
+
+    @pytest.mark.asyncio
+    async def test_complete_basic(self):
+        self.mock_client.post.return_value = MagicMock(
+            json=lambda: self._gemini_response("hello from gemini"),
+            raise_for_status=MagicMock(),
+        )
+        adapter = self._get_adapter()
+        result = await adapter.complete("hello")
+        assert result == "hello from gemini"
+
+    @pytest.mark.asyncio
+    async def test_complete_with_system_instruction(self):
+        self.mock_client.post.return_value = MagicMock(
+            json=lambda: self._gemini_response("ok"),
+            raise_for_status=MagicMock(),
+        )
+        adapter = self._get_adapter()
+        await adapter.complete("p", system="you are helpful")
+        payload = self.mock_client.post.call_args[1]["json"]
+        assert "systemInstruction" in payload
+        assert payload["systemInstruction"]["parts"][0]["text"] == "you are helpful"
+
+    @pytest.mark.asyncio
+    async def test_complete_empty_candidates_returns_empty_string(self):
+        self.mock_client.post.return_value = MagicMock(
+            json=lambda: {},
+            raise_for_status=MagicMock(),
+        )
+        adapter = self._get_adapter()
+        result = await adapter.complete("p")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_transform_code_extracts_code_block(self):
+        self.mock_client.post.return_value = MagicMock(
+            json=lambda: self._gemini_response("```python\nresult = 99\n```"),
+            raise_for_status=MagicMock(),
+        )
+        adapter = self._get_adapter()
+        result = await adapter.transform_code("x=1", "change to 99", Language.PYTHON)
+        assert result == "result = 99"
+
+    @pytest.mark.asyncio
+    async def test_assess_confidence_parses_float(self):
+        self.mock_client.post.return_value = MagicMock(
+            json=lambda: self._gemini_response("0.78"),
+            raise_for_status=MagicMock(),
+        )
+        adapter = self._get_adapter()
+        score = await adapter.assess_confidence("old", "new")
+        assert float(score) == 0.78
+
+    @pytest.mark.asyncio
+    async def test_assess_confidence_invalid_returns_default(self):
+        self.mock_client.post.return_value = MagicMock(
+            json=lambda: self._gemini_response("nope"),
+            raise_for_status=MagicMock(),
+        )
+        adapter = self._get_adapter()
+        score = await adapter.assess_confidence("old", "new")
+        assert float(score) == 0.5
+
+    @pytest.mark.asyncio
+    async def test_close(self):
+        adapter = self._get_adapter()
+        await adapter.close()
+        self.mock_client.aclose.assert_awaited_once()
+
+
+# ===================================================================
 # 8. NullLLMAdapter
 # ===================================================================
 
@@ -2131,10 +2236,13 @@ class TestSettings:
         assert s.project_name == "cloudshift"
         assert s.db_path == Path("cloudshift.db")
         assert s.patterns_dir == Path("patterns")
+        assert s.deployment_mode == "client"
         assert s.llm_enabled is False
         assert s.ollama_base_url == "http://localhost:11434"
-        assert s.ollama_model == "codellama:13b"
+        assert s.ollama_model == "qwen2:latest"
         assert s.ollama_timeout == 120.0
+        assert s.auth_mode == "api_key"
+        assert s.gemini_api_key is None
         assert s.test_timeout == 300
         assert s.max_residual_refs == 0
         assert s.log_level == "INFO"

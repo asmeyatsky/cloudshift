@@ -3,11 +3,13 @@ import {
   X,
   GitBranch,
   FolderOpen,
+  FileCode,
   ArrowRight,
   Loader2,
   Download,
 } from "lucide-react";
 import type { CloudProvider } from "../types";
+import { projectApi } from "../services/api";
 import {
   useProjectStore,
   useManifestStore,
@@ -20,13 +22,14 @@ interface Props {
   onClose: () => void;
 }
 
-type ImportMode = "git" | "local";
+type ImportMode = "git" | "local" | "snippet";
 
-const PROVIDERS: { value: CloudProvider; label: string }[] = [
+/** Cloud-to-cloud: only migrate TO GCP (AWS→GCP, Azure→GCP). */
+const SOURCE_PROVIDERS: { value: CloudProvider; label: string }[] = [
   { value: "aws", label: "AWS" },
-  { value: "gcp", label: "GCP" },
   { value: "azure", label: "Azure" },
 ];
+const TARGET_PROVIDER_GCP: { value: CloudProvider; label: string } = { value: "gcp", label: "GCP" };
 
 export default function ImportProjectModal({ open, onClose }: Props) {
   const [mode, setMode] = useState<ImportMode>("git");
@@ -35,7 +38,10 @@ export default function ImportProjectModal({ open, onClose }: Props) {
   const [localPath, setLocalPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [source, setSource] = useState<CloudProvider>("aws");
-  const [target, setTarget] = useState<CloudProvider>("gcp");
+  const [target, setTarget] = useState<CloudProvider>("gcp"); // GCP only for migration target
+  const [snippetContent, setSnippetContent] = useState("");
+  const [snippetLanguage, setSnippetLanguage] = useState("PYTHON");
+  const [snippetFilename, setSnippetFilename] = useState("");
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
 
@@ -71,6 +77,57 @@ export default function ImportProjectModal({ open, onClose }: Props) {
   const handleImport = async () => {
     setError("");
 
+    if (mode === "snippet") {
+      if (!snippetContent.trim()) {
+        setError("Paste your code snippet");
+        return;
+      }
+      if (!projectName.trim()) {
+        setError("Enter a project name");
+        return;
+      }
+      setImporting(true);
+      const res = await projectApi.createFromSnippet({
+        name: projectName.trim(),
+        content: snippetContent.trim(),
+        language: snippetLanguage,
+        source_provider: source.toUpperCase(),
+        target_provider: target.toUpperCase(),
+        filename: snippetFilename.trim() || undefined,
+      });
+      setImporting(false);
+      if (!res.success) {
+        setError(res.error ?? "Failed to create project from snippet");
+        return;
+      }
+      const newProject = {
+        id: res.data.project_id,
+        name: res.data.name,
+        path: res.data.root_path,
+        sourceProvider: source,
+        targetProvider: target,
+        config: {
+          excludePaths: ["node_modules/**", ".git/**", "dist/**", "__pycache__/**"],
+          includePatterns: ["**/*.py", "**/*.ts", "**/*.js", "**/*.tf", "**/*.yaml", "**/*.json"],
+          autoValidate: true,
+          dryRun: false,
+          maxConcurrency: 4,
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      resetOps();
+      setValidationResult(null);
+      setEntries([]);
+      setProjects([...projects, newProject]);
+      setActiveProject(newProject);
+      onClose();
+      setSnippetContent("");
+      setSnippetFilename("");
+      setProjectName("");
+      return;
+    }
+
     const inputPath = mode === "git" ? repoUrl : localPath;
     if (!inputPath.trim()) {
       setError(mode === "git" ? "Enter a repository URL" : "Enter a file path");
@@ -86,8 +143,6 @@ export default function ImportProjectModal({ open, onClose }: Props) {
     }
 
     setImporting(true);
-
-    // Simulate import delay (clone / index)
     await new Promise((r) => setTimeout(r, 2000));
 
     const newProject = {
@@ -107,19 +162,13 @@ export default function ImportProjectModal({ open, onClose }: Props) {
       updatedAt: new Date().toISOString(),
     };
 
-    // Clear previous pipeline state
     resetOps();
     setValidationResult(null);
     setEntries([]);
-
-    // Add project and set active
     setProjects([...projects, newProject]);
     setActiveProject(newProject);
-
     setImporting(false);
     onClose();
-
-    // Reset form
     setRepoUrl("");
     setLocalPath("");
     setProjectName("");
@@ -159,7 +208,7 @@ export default function ImportProjectModal({ open, onClose }: Props) {
               }`}
             >
               <GitBranch className="h-3.5 w-3.5" />
-              Git Repository
+              Git Repo
             </button>
             <button
               onClick={() => setMode("local")}
@@ -172,10 +221,64 @@ export default function ImportProjectModal({ open, onClose }: Props) {
               <FolderOpen className="h-3.5 w-3.5" />
               Local Path
             </button>
+            <button
+              onClick={() => setMode("snippet")}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-all ${
+                mode === "snippet"
+                  ? "bg-surface-100 text-white shadow"
+                  : "text-gray-500 hover:text-gray-300"
+              }`}
+            >
+              <FileCode className="h-3.5 w-3.5" />
+              Code Snippet
+            </button>
           </div>
 
           {/* Source input */}
-          {mode === "git" ? (
+          {mode === "snippet" ? (
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-400">
+                  Paste code
+                </label>
+                <textarea
+                  value={snippetContent}
+                  onChange={(e) => setSnippetContent(e.target.value)}
+                  placeholder="Paste your source file content here..."
+                  rows={8}
+                  className="w-full rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2.5 font-mono text-sm text-gray-200 placeholder:text-gray-600 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-400">
+                    Language
+                  </label>
+                  <select
+                    value={snippetLanguage}
+                    onChange={(e) => setSnippetLanguage(e.target.value)}
+                    className="w-full rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2.5 text-sm text-gray-200 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
+                  >
+                    <option value="PYTHON">Python</option>
+                    <option value="TYPESCRIPT">TypeScript</option>
+                    <option value="HCL">HCL (Terraform)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-400">
+                    Filename (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={snippetFilename}
+                    onChange={(e) => setSnippetFilename(e.target.value)}
+                    placeholder="main.py"
+                    className="w-full rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2.5 font-mono text-sm text-gray-200 placeholder:text-gray-600 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : mode === "git" ? (
             <div className="space-y-3">
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-gray-400">
@@ -231,18 +334,18 @@ export default function ImportProjectModal({ open, onClose }: Props) {
             />
           </div>
 
-          {/* Providers */}
+          {/* Cloud-to-cloud: AWS or Azure → GCP only */}
           <div className="flex items-end gap-3">
             <div className="flex-1">
               <label className="mb-1.5 block text-xs font-medium text-gray-400">
-                Source Provider
+                Source Cloud
               </label>
               <select
                 value={source}
                 onChange={(e) => setSource(e.target.value as CloudProvider)}
                 className="w-full rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2.5 text-sm text-gray-200 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
               >
-                {PROVIDERS.map((p) => (
+                {SOURCE_PROVIDERS.map((p) => (
                   <option key={p.value} value={p.value}>
                     {p.label}
                   </option>
@@ -256,18 +359,15 @@ export default function ImportProjectModal({ open, onClose }: Props) {
 
             <div className="flex-1">
               <label className="mb-1.5 block text-xs font-medium text-gray-400">
-                Target Provider
+                Target Cloud
               </label>
               <select
                 value={target}
-                onChange={(e) => setTarget(e.target.value as CloudProvider)}
                 className="w-full rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2.5 text-sm text-gray-200 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
+                readOnly
+                aria-readonly
               >
-                {PROVIDERS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
+                <option value={TARGET_PROVIDER_GCP.value}>{TARGET_PROVIDER_GCP.label}</option>
               </select>
             </div>
           </div>

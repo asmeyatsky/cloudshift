@@ -16,6 +16,7 @@ import {
   Plus,
   Check,
   ArrowRight,
+  LogOut,
 } from "lucide-react";
 import { useWebSocket } from "../hooks/useWebSocket";
 import {
@@ -24,6 +25,7 @@ import {
   useManifestStore,
   useValidationStore,
 } from "../store";
+import { useAuthStore } from "../store/authStore";
 import ImportProjectModal from "./ImportProjectModal";
 
 const NAV_ITEMS = [
@@ -49,6 +51,9 @@ export default function Layout() {
 
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const deploymentMode = useAuthStore((s) => s.deploymentMode);
+  const authMode = useAuthStore((s) => s.authMode);
+  const logout = useAuthStore((s) => s.logout);
 
   const switchProject = (projectId: string) => {
     const proj = projects.find((p) => p.id === projectId);
@@ -178,13 +183,13 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* LLM Status */}
+        {/* Deployment & LLM */}
         <div className="border-t border-white/[0.06] px-4 py-4">
           <div className="rounded-xl bg-surface-200/60 px-4 py-3">
             <div className="flex items-center gap-2">
               <Brain className="h-4 w-4 text-accent-purple" />
               <span className="text-xs font-semibold text-gray-400">
-                LLM Engine
+                {deploymentMode === "demo" ? "Demo (Gemini)" : "Client (Ollama)"}
               </span>
             </div>
             <div className="mt-2 flex items-center gap-2">
@@ -193,10 +198,20 @@ export default function Layout() {
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-green" />
               </span>
               <span className="font-mono text-xs text-gray-500">
-                qwen2.5-coder:14b
+                {deploymentMode === "demo" ? "Gemini" : "Qwen 2"}
               </span>
             </div>
           </div>
+
+          {authMode === "password" && (
+            <button
+              onClick={() => logout()}
+              className="mt-3 flex w-full items-center gap-2 rounded-lg px-4 py-2 text-xs font-medium text-gray-500 hover:bg-white/[0.04] hover:text-gray-300"
+            >
+              <LogOut className="h-4 w-4" />
+              Sign out
+            </button>
+          )}
 
           <div className="mt-3 flex items-center gap-2 px-1">
             {connected ? (

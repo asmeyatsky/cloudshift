@@ -9,12 +9,22 @@ import type {
   Pattern,
   FileDiff,
 } from "../types";
+import { useAuthStore.getState } from "../store/authStore";
 
 const BASE = "/api";
 
 type ApiResult<T> =
   | { success: true; data: T }
   | { success: false; error?: string };
+
+function getAuthHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const { token } = useAuthStore.getState();
+  if (token) return { Authorization: `Bearer ${token}` };
+  const apiKey = (window as unknown as { __CLOUDSHIFT_API_KEY__?: string }).__CLOUDSHIFT_API_KEY__;
+  if (apiKey) return { "X-API-Key": apiKey };
+  return {};
+}
 
 async function request<T>(
   method: string,
@@ -26,14 +36,18 @@ async function request<T>(
       method,
       headers: {
         "Content-Type": "application/json",
-        ...(typeof window !== "undefined" &&
-          (window as unknown as { __CLOUDSHIFT_API_KEY__?: string }).__CLOUDSHIFT_API_KEY__ && {
-            "X-API-Key": (window as unknown as { __CLOUDSHIFT_API_KEY__: string }).__CLOUDSHIFT_API_KEY__,
-          }),
+        ...getAuthHeaders(),
       },
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && typeof window !== "undefined") {
+      const { authMode, setToken, setSessionExpired } = useAuthStore.getState();
+      if (authMode === "password") {
+        setToken(null);
+        setSessionExpired(true);
+      }
+    }
     if (!res.ok) {
       return {
         success: false,
@@ -146,8 +160,24 @@ export const configApi = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Auth (mode, login for client)                                      */
+/* ------------------------------------------------------------------ */
+
+export const authApi = {
+  mode: () => get<{ auth_mode: string; deployment_mode: string }>("/auth/mode"),
+  login: (username: string, password: string) =>
+    post<{ token: string; expires_in: number }>("/auth/login", { username, password }),
+};
+
+/* ------------------------------------------------------------------ */
 /*  Project / Manifest (UI concepts; map to backend where possible)   */
 /* ------------------------------------------------------------------ */
+
+export interface FromSnippetResponse {
+  project_id: string;
+  root_path: string;
+  name: string;
+}
 
 export const projectApi = {
   updateConfig: async (_projectId: string, config: ProjectConfig): Promise<ApiResult<unknown>> => {
@@ -161,6 +191,15 @@ export const projectApi = {
       },
     });
   },
+  /** Create a project from pasted code (client mode). */
+  createFromSnippet: (body: {
+    name: string;
+    content: string;
+    language: string;
+    source_provider: string;
+    target_provider: string;
+    filename?: string;
+  }) => post<FromSnippetResponse>("/projects/from-snippet", body),
 };
 
 export const manifestApi = {

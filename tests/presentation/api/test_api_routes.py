@@ -30,7 +30,7 @@ from cloudshift.presentation.api.dependencies import (
     get_report_use_case,
     get_scan_use_case,
     get_validate_use_case,
-    verify_api_key,
+    verify_auth,
 )
 from cloudshift.presentation.api.schemas import (
     ApplyRequestBody,
@@ -101,7 +101,7 @@ def app(container):
     application.dependency_overrides[get_validate_use_case] = lambda: mock_validate_uc
     application.dependency_overrides[get_report_use_case] = lambda: mock_report_uc
     application.dependency_overrides[get_container] = lambda: container
-    application.dependency_overrides[verify_api_key] = lambda: None
+    application.dependency_overrides[verify_auth] = lambda: None
 
     # Stash mocks for tests that need to configure them.
     application._mock_ucs = {

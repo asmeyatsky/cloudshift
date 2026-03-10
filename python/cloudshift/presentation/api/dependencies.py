@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, Security, status
-from fastapi.security import APIKeyHeader
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+
+from cloudshift.infrastructure.config.settings import AuthMode
+from cloudshift.presentation.api.auth_utils import load_users, verify_jwt
 
 
 def get_container(request: Request) -> Any:
@@ -19,22 +22,72 @@ def get_settings(request: Request) -> Any:
 
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+_bearer = HTTPBearer(auto_error=False)
+
+
+def _get_bearer_token(request: Request) -> str | None:
+    auth = request.headers.get("Authorization")
+    if auth and auth.startswith("Bearer "):
+        return auth[7:].strip()
+    return None
 
 
 async def verify_api_key(
     request: Request,
     api_key: str = Security(_api_key_header),
 ):
-    """Verify the X-API-Key header against the configured static key."""
+    """Verify the X-API-Key header against the configured static key (auth_mode=api_key)."""
     settings = get_settings(request)
     if not settings.api_key:
         return  # Auth disabled
-
     if api_key != settings.api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API Key",
         )
+
+
+async def verify_auth(request: Request):
+    """Single auth dependency: dispatches by settings.auth_mode."""
+    settings = get_settings(request)
+    mode: AuthMode = getattr(settings, "auth_mode", "api_key") or "api_key"
+
+    if mode == "api_key":
+        api_key = request.headers.get("X-API-Key") or ""
+        if not settings.api_key:
+            return
+        if api_key != settings.api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or missing API Key",
+            )
+        return
+
+    if mode == "searce_id":
+        # Demo: accept X-Searce-ID or Bearer token (Searce ID token)
+        searce_id = request.headers.get("X-Searce-ID")
+        token = _get_bearer_token(request)
+        if not searce_id and not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Searce ID required (X-Searce-ID or Authorization Bearer)",
+            )
+        return
+
+    if mode == "password":
+        token = _get_bearer_token(request)
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization Bearer token required",
+            )
+        payload = verify_jwt(token, settings.jwt_secret)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+            )
+        return
 
 
 def get_scan_use_case(container: Any = Depends(get_container)):

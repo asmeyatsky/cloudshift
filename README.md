@@ -151,6 +151,10 @@ cloudshift config set llm.model qwen2.5-coder:14b
 
 See [docs/ollama-integration.md](docs/ollama-integration.md) for air-gapped deployment, Docker setup, and model fine-tuning.
 
+### Demo mode (Gemini)
+
+For cloud-based demo deployments, you can use **Google Gemini** instead of Ollama. Set `CLOUDSHIFT_DEPLOYMENT_MODE=demo` and provide a Gemini API key. See **[docs/gemini-api-key.md](docs/gemini-api-key.md)** for how to get and secure a key (Google AI Studio, GitHub Secrets, env vars).
+
 ---
 
 ## Development

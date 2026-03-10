@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2.10",
     "pydantic-settings>=2.0",
     "httpx>=0.28",
+    "bcrypt>=4.0",
     "pytest>=8",
     "pytest-asyncio>=0.25",
     "ruff>=0.9",

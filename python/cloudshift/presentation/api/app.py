@@ -15,8 +15,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from cloudshift.infrastructure.config.settings import Settings
-from cloudshift.presentation.api.dependencies import verify_api_key
-from cloudshift.presentation.api.routes import apply, config, patterns, plan, report, scan, validate
+from cloudshift.presentation.api.dependencies import verify_auth
+from cloudshift.presentation.api.routes import apply, auth as auth_router, config, patterns, plan, report, projects, scan, validate
 from cloudshift.presentation.api.schemas import ErrorResponse
 from cloudshift.presentation.api.websocket import router as ws_router
 
@@ -57,8 +57,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    # -- Auth (public: login, mode) -----------------------------------------
+    app.include_router(auth_router.router)
+
     # -- Route modules (Protected) -----------------------------------------
-    protected_deps = [Depends(verify_api_key)]
+    protected_deps = [Depends(verify_auth)]
     app.include_router(scan.router, dependencies=protected_deps)
     app.include_router(plan.router, dependencies=protected_deps)
     app.include_router(apply.router, dependencies=protected_deps)
@@ -66,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(patterns.router, dependencies=protected_deps)
     app.include_router(report.router, dependencies=protected_deps)
     app.include_router(config.router, dependencies=protected_deps)
+    app.include_router(projects.router, dependencies=protected_deps)
     app.include_router(ws_router, dependencies=protected_deps)
 
     # -- Error handlers ----------------------------------------------------
