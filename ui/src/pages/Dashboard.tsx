@@ -26,8 +26,6 @@ import {
 } from "../store";
 import { useScan } from "../hooks/useScan";
 import {
-  SEED_ENTRIES,
-  SEED_SCAN_RESULT,
   SEED_PLAN_RESULT,
   SEED_APPLY_RESULT,
   SEED_DIFFS,
@@ -372,13 +370,13 @@ export default function Dashboard() {
               <StatCard
                 icon={<FileText className="h-6 w-6 text-primary-400" />}
                 label="Files Scanned"
-                value={scanResult?.filesScanned ?? 0}
+                value={scanResult?.filesScanned ?? scanResult?.total_files_scanned ?? 0}
                 onClick={() => navigate("/manifest")}
               />
               <StatCard
                 icon={<Scan className="h-6 w-6 text-accent-purple" />}
                 label="Resources Found"
-                value={scanResult?.resourcesFound ?? 0}
+                value={Array.isArray(scanResult?.resourcesFound) ? scanResult.resourcesFound.length : (scanResult?.services_found?.length ?? 0)}
                 onClick={() => navigate("/manifest")}
               />
               <StatCard

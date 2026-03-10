@@ -16,10 +16,13 @@ export function useValidation() {
     setError(null);
 
     const res = await validationApi.run(activeProject.id);
-    if (res.success) {
-      setResult(res.data);
+    if (res.success && res.data) {
+      const jobId = "job_id" in res.data ? res.data.job_id : "";
+      const statusRes = await validationApi.status(jobId);
+      if (statusRes.success && statusRes.data) setResult(statusRes.data);
+      else setError(!statusRes.success && "error" in statusRes ? (statusRes.error ?? null) : "Validation failed");
     } else {
-      setError(res.error ?? "Validation failed");
+      setError(!res.success && "error" in res ? (res.error ?? null) : "Validation failed");
     }
     setLoading(false);
   }, [activeProject, loading, setLoading, setError, setResult]);
@@ -29,9 +32,7 @@ export function useValidation() {
 
     setLoading(true);
     const res = await validationApi.latest(activeProject.id);
-    if (res.success) {
-      setResult(res.data);
-    }
+    if (res.success && res.data) setResult(res.data);
     setLoading(false);
   }, [activeProject, setLoading, setResult]);
 

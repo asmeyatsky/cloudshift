@@ -16,8 +16,8 @@ export default function PatternsPage() {
   useEffect(() => {
     if (patterns.length > 0) return;
     setLoading(true);
-    patternsApi.list().then((res) => {
-      if (res.success) {
+    patternsApi.list().then((res: { success: boolean; data?: Pattern[] }) => {
+      if (res.success && res.data) {
         setPatterns(res.data);
       }
       setLoading(false);

@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { planApi } from "../services/api";
 import { useProjectStore, useOperationStore } from "../store";
+import type { PlanResult } from "../types";
 
 export function usePlan() {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -18,16 +19,15 @@ export function usePlan() {
     setPlanResult(null);
     setDiffs([]);
 
-    const res = await planApi.create(activeProject.id);
-    if (res.success) {
-      setPlanResult(res.data);
-      // Fetch associated diffs
-      const diffRes = await planApi.getDiffs(activeProject.id, res.data.id);
-      if (diffRes.success) {
-        setDiffs(diffRes.data);
-      }
+    const res = await planApi.create(activeProject.id, activeProject.id);
+    if (res.success && res.data) {
+      const jobId = "job_id" in res.data ? res.data.job_id : (res.data as { id: string }).id;
+      const planRes = await planApi.get(jobId);
+      if (planRes.success && planRes.data) setPlanResult(planRes.data as unknown as PlanResult);
+      const diffRes = await planApi.getDiffs(jobId);
+      if (diffRes.success) setDiffs(diffRes.data);
     } else {
-      setError(res.error ?? "Plan creation failed");
+      setError(!res.success && "error" in res ? (res.error ?? null) : "Plan creation failed");
     }
     setRunning(false);
   }, [activeProject, running, setRunning, setError, setPlanResult, setDiffs]);

@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { scanApi } from "../services/api";
 import { useProjectStore, useOperationStore, useManifestStore } from "../store";
+import type { ManifestEntry, EntryStatus } from "../types";
 
 export function useScan() {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -31,13 +32,14 @@ export function useScan() {
             if (statusRes.success) {
               setScanResult(statusRes.data);
               // Map backend files to ManifestEntry[]
-              const entries = (statusRes.data.files || []).map((f: any, idx: number) => ({
+              const data = statusRes.data as { files?: { path?: string; services_detected?: string[]; confidence?: number }[]; source_provider?: string; target_provider?: string };
+              const entries: ManifestEntry[] = (data.files || []).map((f, idx) => ({
                   id: `e-${idx}`,
-                  filePath: f.path,
+                  filePath: f.path ?? "",
                   resourceType: (f.services_detected || []).join(", ") || "Unknown",
-                  sourceProvider: statusRes.data.source_provider,
-                  targetProvider: statusRes.data.target_provider,
-                  status: "scanned",
+                  sourceProvider: (data.source_provider ?? "aws") as "aws" | "azure" | "gcp",
+                  targetProvider: (data.target_provider ?? "gcp") as "aws" | "azure" | "gcp",
+                  status: "scanned" as EntryStatus,
                   transformations: [],
                   issues: [],
                   metadata: { services: f.services_detected, confidence: f.confidence },

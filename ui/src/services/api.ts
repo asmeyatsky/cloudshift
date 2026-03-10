@@ -1,25 +1,62 @@
 import type {
-  ApiResponse,
   ApplyResult,
-  FileDiff,
   Manifest,
-  ManifestEntry,
-  PaginatedResponse,
-  Pattern,
   PlanResult,
-  Project,
   ProjectConfig,
   ScanResult,
   ValidationResult,
   JobAccepted,
+  Pattern,
+  FileDiff,
 } from "../types";
 
 const BASE = "/api";
 
-/* ------------------------------------------------------------------ */
-/*  Generic helpers                                                    */
-/* ------------------------------------------------------------------ */
-// ... existing code ...
+type ApiResult<T> =
+  | { success: true; data: T }
+  | { success: false; error?: string };
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<ApiResult<T>> {
+  try {
+    const res = await fetch(BASE + path, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(typeof window !== "undefined" &&
+          (window as unknown as { __CLOUDSHIFT_API_KEY__?: string }).__CLOUDSHIFT_API_KEY__ && {
+            "X-API-Key": (window as unknown as { __CLOUDSHIFT_API_KEY__: string }).__CLOUDSHIFT_API_KEY__,
+          }),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        success: false,
+        error: typeof data.detail === "string" ? data.detail : data.detail?.[0]?.msg ?? res.statusText,
+      };
+    }
+    return { success: true, data: data as T };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Network error" };
+  }
+}
+
+function get<T>(path: string): Promise<ApiResult<T>> {
+  return request<T>("GET", path);
+}
+
+function post<T>(path: string, body: unknown): Promise<ApiResult<T>> {
+  return request<T>("POST", path, body);
+}
+
+function put<T>(path: string, body: unknown): Promise<ApiResult<T>> {
+  return request<T>("PUT", path, body);
+}
 
 /* ------------------------------------------------------------------ */
 /*  Scan / Plan / Apply endpoints                                      */
@@ -32,8 +69,7 @@ export const scanApi = {
       source_provider: sourceProvider,
       target_provider: targetProvider,
     }),
-  status: (jobId: string) =>
-    get<ScanResult>(`/scan/${jobId}`),
+  status: (jobId: string) => get<ScanResult>(`/scan/${jobId}`),
 };
 
 export const planApi = {
@@ -42,13 +78,13 @@ export const planApi = {
       project_id: projectId,
       manifest_id: manifestId,
     }),
-  get: (jobId: string) =>
-    get<PlanResult>(`/plan/${jobId}`),
-  // getDiffs kept same if backend supports it or needs update?
-  // Backend `PlanResult` has diffs inside?
-  // Let's check schemas.py `PlanResultResponse` -> no diffs, it has steps.
-  // Apply returns diffs.
-  // We'll leave getDiffs alone for now or remove if unused.
+  get: (jobId: string) => get<PlanResult>(`/plan/${jobId}`),
+  getDiffs: async (jobId: string): Promise<ApiResult<FileDiff[]>> => {
+    const res = await get<PlanResult>(`/plan/${jobId}`);
+    if (!res.success) return res;
+    const diffs = (res.data as { steps?: { diffs?: FileDiff[] }[] })?.steps?.flatMap((s) => s.diffs ?? []) ?? [];
+    return { success: true, data: diffs };
+  },
 };
 
 export const applyApi = {
@@ -66,6 +102,10 @@ export const validationApi = {
   start: (planId: string) =>
     post<JobAccepted>("/validate", { plan_id: planId }),
   status: (jobId: string) =>
+    get<ValidationResult>(`/validate/${jobId}`),
+  run: (planId: string) =>
+    post<JobAccepted>("/validate", { plan_id: planId }),
+  latest: (jobId: string) =>
     get<ValidationResult>(`/validate/${jobId}`),
 };
 
@@ -91,7 +131,55 @@ export const patternsApi = {
 
 export const reportApi = {
   generate: (projectId: string) =>
-    post<{ url: string }>(`/projects/${projectId}/report`),
-  get: (projectId: string) =>
-    get<{ html: string }>(`/projects/${projectId}/report/latest`),
+    post<{ report_id: string }>("/report", { project_id: projectId }),
+  get: (jobId: string) =>
+    get<{ report_id: string; html?: string }>(`/report/${jobId}`),
+};
+
+/* ------------------------------------------------------------------ */
+/*  Config (global; project-scoped in UI)                              */
+/* ------------------------------------------------------------------ */
+
+export const configApi = {
+  get: () => get<{ source_provider?: string; target_provider?: string; default_strategy?: string; max_parallel?: number; backup_enabled?: boolean; extra?: Record<string, unknown> }>("/config"),
+  update: (body: Record<string, unknown>) => put("/config", body),
+};
+
+/* ------------------------------------------------------------------ */
+/*  Project / Manifest (UI concepts; map to backend where possible)   */
+/* ------------------------------------------------------------------ */
+
+export const projectApi = {
+  updateConfig: async (_projectId: string, config: ProjectConfig): Promise<ApiResult<unknown>> => {
+    return put("/config", {
+      extra: {
+        excludePaths: config.excludePaths,
+        includePatterns: config.includePatterns,
+        autoValidate: config.autoValidate,
+        dryRun: config.dryRun,
+        maxConcurrency: config.maxConcurrency,
+      },
+    });
+  },
+};
+
+export const manifestApi = {
+  get: async (projectId: string): Promise<ApiResult<Manifest>> => {
+    return {
+      success: true,
+      data: {
+        id: `manifest-${projectId}`,
+        projectId,
+        entries: [],
+        summary: {
+          totalEntries: 0,
+          byStatus: { pending: 0, scanned: 0, planned: 0, applied: 0, validated: 0, skipped: 0 },
+          byResourceType: {},
+          byProvider: { aws: 0, azure: 0, gcp: 0 },
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  },
 };

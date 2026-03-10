@@ -67,7 +67,7 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
         <ReportCard
           icon={<FileText className="h-5 w-5 text-primary-400" />}
           label="Files Scanned"
-          value={scanResult?.filesScanned ?? 0}
+          value={scanResult?.filesScanned ?? scanResult?.total_files_scanned ?? 0}
         />
         <ReportCard
           icon={<GitCompare className="h-5 w-5 text-accent-purple" />}

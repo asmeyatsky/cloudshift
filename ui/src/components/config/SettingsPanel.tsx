@@ -27,8 +27,8 @@ export default function SettingsPanel() {
     if (!activeProject) return;
     setSaving(true);
     const res = await projectApi.updateConfig(activeProject.id, config);
-    if (res.success) {
-      setActiveProject({ ...activeProject, config: res.data });
+    if (res.success && res.data) {
+      setActiveProject({ ...activeProject, config: res.data as ProjectConfig });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     }

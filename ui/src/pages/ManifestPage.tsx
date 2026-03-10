@@ -3,7 +3,7 @@ import { X, ArrowRight } from "lucide-react";
 import ManifestViewer from "../components/manifest/ManifestViewer";
 import { useManifestStore, useProjectStore } from "../store";
 import { manifestApi } from "../services/api";
-import type { EntryStatus } from "../types";
+import type { EntryStatus, Manifest, ManifestEntry } from "../types";
 
 const STATUS_STYLES: Record<EntryStatus, string> = {
   pending: "bg-gray-500/10 text-gray-400",
@@ -30,9 +30,10 @@ export default function ManifestPage() {
     if (!activeProject || entries.length > 0) return;
     setLoading(true);
     manifestApi.get(activeProject.id).then((res) => {
-      if (res.success) {
-        setManifest(res.data);
-        setEntries(res.data.entries);
+      if (res.success && res.data) {
+        const manifest = res.data as Manifest;
+        setManifest(manifest);
+        setEntries((manifest.entries ?? []) as ManifestEntry[]);
       }
       setLoading(false);
     });

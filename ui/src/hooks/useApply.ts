@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { applyApi } from "../services/api";
 import { useProjectStore, useOperationStore } from "../store";
+import type { ApplyResult } from "../types";
 
 export function useApply() {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -19,9 +20,9 @@ export function useApply() {
     setError(null);
     setApplyResult(null);
 
-    const res = await applyApi.start(activeProject.id, planResult.id);
+    const res = await applyApi.start(planResult.id);
     if (res.success) {
-      setApplyResult(res.data);
+      setApplyResult(res.data as unknown as ApplyResult);
     } else {
       setError(res.error ?? "Apply failed");
     }

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1087,7 +1088,7 @@ class TestScanProjectUseCaseAdditional:
         parser.count_lines.return_value = 10
         detector.detect_services.return_value = [("S3", ConfidenceScore(0.9))]
 
-        uc = ScanProjectUseCase(fs, parser, detector)
+        uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")])
         from cloudshift.application.dtos.scan import ScanRequest
         result = await uc.execute(
             ScanRequest(
@@ -1113,7 +1114,7 @@ class TestScanProjectUseCaseAdditional:
         parser.detect_language.return_value = Language.PYTHON
         detector.detect_services.return_value = []
 
-        uc = ScanProjectUseCase(fs, parser, detector)
+        uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")])
         from cloudshift.application.dtos.scan import ScanRequest
         result = await uc.execute(
             ScanRequest(
@@ -1134,7 +1135,7 @@ class TestScanProjectUseCaseAdditional:
 
         fs.list_files.return_value = []
 
-        uc = ScanProjectUseCase(fs, parser, detector, event_bus=event_bus)
+        uc = ScanProjectUseCase(fs, parser, detector, event_bus=event_bus, allowed_paths=[Path("/")])
         from cloudshift.application.dtos.scan import ScanRequest
         await uc.execute(
             ScanRequest(
@@ -1433,7 +1434,8 @@ class TestValidateTransformationUseCaseAdditional:
         test_runner.run.return_value = (True, "ok")
 
         uc = ValidateTransformationUseCase(
-            ast_v, residual, sdk, test_runner=test_runner, transform_store=store
+            ast_v, residual, sdk, test_runner=test_runner, transform_store=store,
+            allowed_test_commands=["pytest"],
         )
         result = await uc.execute(
             ValidationRequest(plan_id="plan1", run_tests=True, test_command="pytest")

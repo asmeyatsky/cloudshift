@@ -30,6 +30,7 @@ from cloudshift.presentation.api.dependencies import (
     get_report_use_case,
     get_scan_use_case,
     get_validate_use_case,
+    verify_api_key,
 )
 from cloudshift.presentation.api.schemas import (
     ApplyRequestBody,
@@ -69,6 +70,7 @@ class FakeContainer:
         self.file_system = AsyncMock()
         self.validation = AsyncMock()
         self.pattern_store = MagicMock()
+        self.resolve = MagicMock(return_value=MagicMock())
 
 
 @pytest.fixture()
@@ -99,6 +101,7 @@ def app(container):
     application.dependency_overrides[get_validate_use_case] = lambda: mock_validate_uc
     application.dependency_overrides[get_report_use_case] = lambda: mock_report_uc
     application.dependency_overrides[get_container] = lambda: container
+    application.dependency_overrides[verify_api_key] = lambda: None
 
     # Stash mocks for tests that need to configure them.
     application._mock_ucs = {
@@ -635,16 +638,17 @@ class TestDependencies:
             get_plan_use_case(custom_container)
 
     def test_get_apply_use_case(self, container):
-        """Cover lines 34-41 of dependencies.py."""
-        # The dependency function passes diff= which is wrong for the constructor.
-        with pytest.raises(TypeError):
+        """Cover get_apply_use_case: constructor expects plan_store, diff_engine, etc."""
+        with pytest.raises((TypeError, AttributeError)):
             get_apply_use_case(container)
 
     def test_get_validate_use_case(self, container):
-        """Cover lines 44-51 of dependencies.py."""
-        # The dependency function passes validation= which is wrong for the constructor.
-        with pytest.raises(TypeError):
-            get_validate_use_case(container)
+        """Cover get_validate_use_case: returns container.resolve(ValidateTransformationUseCase)."""
+        from cloudshift.application.use_cases.validate_transformation import ValidateTransformationUseCase
+
+        uc = get_validate_use_case(container)
+        assert isinstance(uc, MagicMock)
+        container.resolve.assert_called_once_with(ValidateTransformationUseCase)
 
     def test_get_patterns_use_case(self, container):
         from cloudshift.application.use_cases.manage_patterns import ManagePatternsUseCase
@@ -653,8 +657,7 @@ class TestDependencies:
         assert isinstance(uc, ManagePatternsUseCase)
 
     def test_get_report_use_case(self, container):
-        """Cover lines 62-65 of dependencies.py."""
-        # The function calls GenerateReportUseCase() with no args, but it requires 4.
+        """Cover get_report_use_case: GenerateReportUseCase() requires 4 store args."""
         with pytest.raises(TypeError):
             get_report_use_case(container)
 

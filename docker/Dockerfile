@@ -16,11 +16,12 @@ FROM --platform=linux/amd64 python:3.13-slim AS python-builder
 WORKDIR /build
 COPY --from=rust-builder /build/dist/ ./dist/
 
-# UI has TS errors in repo; use placeholder until fixed. To build full UI: uncomment ui-builder and COPY from ui-builder.
-# FROM node:22-slim AS ui-builder
-# WORKDIR /build/ui
-# COPY ui/package.json ui/package-lock.json* ./
-# RUN npm install && COPY ui/ . && npm run build
+FROM --platform=linux/amd64 node:22-slim AS ui-builder
+WORKDIR /build/ui
+COPY ui/package.json ui/package-lock.json* ./
+RUN npm install
+COPY ui/ .
+RUN npm run build
 
 FROM --platform=linux/amd64 python:3.13-slim
 WORKDIR /app
@@ -32,7 +33,7 @@ RUN groupadd -g 10001 cloudshift && \
 COPY --from=python-builder /build/dist/*.whl /tmp/
 RUN pip install /tmp/*.whl && rm /tmp/*.whl
 
-COPY --chown=cloudshift:cloudshift docker/static-placeholder/ /app/static/
+COPY --from=ui-builder --chown=cloudshift:cloudshift /build/ui/dist/ /app/static/
 COPY --chown=cloudshift:cloudshift patterns/ /app/patterns/
 
 # Create data directory and set permissions

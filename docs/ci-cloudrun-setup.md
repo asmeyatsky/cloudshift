@@ -14,6 +14,7 @@ CI builds the image with Docker on the runner and pushes to Artifact Registry (n
 # Replace with your Cloud Refactor Agent SA email if different
 export SA="cloud-refactor-agent@refactord-479213.iam.gserviceaccount.com"
 
+# Push images to Artifact Registry (includes uploadArtifacts)
 gcloud projects add-iam-policy-binding refactord-479213 \
   --member="serviceAccount:${SA}" \
   --role="roles/artifactregistry.writer"
@@ -25,6 +26,12 @@ gcloud projects add-iam-policy-binding refactord-479213 \
 gcloud projects add-iam-policy-binding refactord-479213 \
   --member="serviceAccount:${SA}" \
   --role="roles/iam.serviceAccountUser"
+
+# Let the SA act as the default compute SA (Cloud Run runtime identity)
+gcloud iam service-accounts add-iam-policy-binding 108691610262-compute@developer.gserviceaccount.com \
+  --member="serviceAccount:${SA}" \
+  --role="roles/iam.serviceAccountUser" \
+  --project=refactord-479213
 ```
 
 ### 2. Create a JSON key and add it to GitHub Secrets

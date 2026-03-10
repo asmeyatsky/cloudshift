@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from cloudshift.infrastructure.config.settings import Settings
 from cloudshift.presentation.api.dependencies import verify_api_key
@@ -90,7 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    # -- Root and favicon (serve Web UI, avoid 404s) -----------------------
+    # -- Root, assets, and favicon (serve Web UI) --------------------------
     static_path = settings.static_dir.resolve()
     index_html = static_path / "index.html"
     if index_html.exists():
@@ -98,6 +99,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         @app.get("/", include_in_schema=False)
         async def root() -> FileResponse:
             return FileResponse(index_html, media_type="text/html")
+
+    assets_dir = static_path / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:

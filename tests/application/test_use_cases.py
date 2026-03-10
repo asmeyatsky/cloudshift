@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call
 
@@ -98,7 +99,7 @@ class TestScanProjectUseCase:
             ("S3", ConfidenceScore(0.95)),
         ]
 
-        uc = ScanProjectUseCase(fs, parser, detector, event_bus)
+        uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
         result = await uc.execute(_make_scan_request())
 
         assert result.error is None
@@ -111,7 +112,7 @@ class TestScanProjectUseCase:
         fs, parser, detector, event_bus = mocks
         fs.list_files.side_effect = OSError("permission denied")
 
-        uc = ScanProjectUseCase(fs, parser, detector, event_bus)
+        uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
         result = await uc.execute(_make_scan_request())
 
         assert result.error is not None
@@ -124,7 +125,7 @@ class TestScanProjectUseCase:
         fs.read_file.return_value = "hello"
         parser.detect_language.return_value = None
 
-        uc = ScanProjectUseCase(fs, parser, detector, event_bus)
+        uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
         result = await uc.execute(_make_scan_request())
 
         assert len(result.files) == 0
@@ -140,7 +141,7 @@ class TestScanProjectUseCase:
         parser.count_lines.return_value = 5
 
         # Request only HCL -- Python file should be filtered out.
-        uc = ScanProjectUseCase(fs, parser, detector, event_bus)
+        uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
         result = await uc.execute(
             _make_scan_request(languages=[Language.HCL])
         )
@@ -152,7 +153,7 @@ class TestScanProjectUseCase:
         fs, parser, detector, event_bus = mocks
         fs.list_files.return_value = []
 
-        uc = ScanProjectUseCase(fs, parser, detector, event_bus)
+        uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
         result = await uc.execute(_make_scan_request())
 
         assert result.error is None
@@ -166,7 +167,7 @@ class TestScanProjectUseCase:
         fs, parser, detector, _ = mocks
         fs.list_files.return_value = []
 
-        uc = ScanProjectUseCase(fs, parser, detector, event_bus=None)
+        uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=None)
         result = await uc.execute(_make_scan_request())
 
         assert result.error is None

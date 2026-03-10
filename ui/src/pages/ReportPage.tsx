@@ -55,8 +55,8 @@ export default function ReportPage() {
 
         <h3 style="color:#bd93f9;margin-top:24px;">Pipeline Summary</h3>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          <tr><td style="padding:6px 0;color:#888;">Files Scanned</td><td style="color:#fff;font-weight:600;">${scanResult?.filesScanned ?? "—"}</td></tr>
-          <tr><td style="padding:6px 0;color:#888;">Resources Discovered</td><td style="color:#fff;font-weight:600;">${scanResult?.resourcesFound ?? "—"}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;">Files Scanned</td><td style="color:#fff;font-weight:600;">${scanResult?.filesScanned ?? scanResult?.total_files_scanned ?? "—"}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;">Resources Discovered</td><td style="color:#fff;font-weight:600;">${Array.isArray(scanResult?.resourcesFound) ? scanResult.resourcesFound.length : (scanResult?.services_found?.length ?? "—")}</td></tr>
           <tr><td style="padding:6px 0;color:#888;">Transformations Planned</td><td style="color:#fff;font-weight:600;">${planResult?.estimatedChanges ?? "—"}</td></tr>
           <tr><td style="padding:6px 0;color:#888;">Files Modified</td><td style="color:#fff;font-weight:600;">${applyResult?.filesModified ?? "—"}</td></tr>
           <tr><td style="padding:6px 0;color:#888;">Validation Issues</td><td style="color:#fff;font-weight:600;">${validationResult?.summary.totalIssues ?? "—"}</td></tr>

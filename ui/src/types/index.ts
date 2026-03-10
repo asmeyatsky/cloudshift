@@ -155,10 +155,16 @@ export interface JobAccepted {
 export interface ScanResult {
   project_id: string;
   root_path: string;
-  files: unknown[]; // TODO: Type this properly if needed
+  source_provider?: string;
+  target_provider?: string;
+  files: unknown[];
   total_files_scanned: number;
   services_found: string[];
   error?: string;
+  /** UI alias for total_files_scanned */
+  filesScanned?: number;
+  /** UI alias for services_found */
+  resourcesFound?: string[];
 }
 
 export interface PlanResult {

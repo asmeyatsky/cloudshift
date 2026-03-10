@@ -12,8 +12,8 @@ export default function DiffPage() {
 
   useEffect(() => {
     if (!activeProject || !planResult || diffs.length > 0) return;
-    planApi.getDiffs(activeProject.id, planResult.id).then((res) => {
-      if (res.success) {
+    planApi.getDiffs(planResult.id).then((res: { success: boolean; data?: unknown }) => {
+      if (res.success && Array.isArray(res.data)) {
         setDiffs(res.data);
       }
     });

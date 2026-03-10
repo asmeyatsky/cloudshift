@@ -227,13 +227,13 @@ export const SEED_ENTRIES: ManifestEntry[] = [
 /* ------------------------------------------------------------------ */
 
 export const SEED_SCAN_RESULT: ScanResult = {
-  id: "scan-f8e7d6c5",
-  projectPath: "/srv/payments-service",
+  project_id: "proj-seed",
+  root_path: "/srv/payments-service",
+  files: [],
+  total_files_scanned: 147,
+  services_found: [],
   filesScanned: 147,
-  resourcesFound: 12,
-  duration: 3420,
-  entries: SEED_ENTRIES,
-  timestamp: "2026-03-08T13:00:00Z",
+  resourcesFound: [],
 };
 
 /* ------------------------------------------------------------------ */
