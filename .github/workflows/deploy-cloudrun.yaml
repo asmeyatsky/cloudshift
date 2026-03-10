@@ -2,11 +2,10 @@
 # No Cloud Build; only Artifact Registry + Cloud Run permissions needed.
 #
 # Required GitHub secrets:
-#   GCP_SA_KEY: JSON key for the Cloud Refactor Agent service account with:
-#     - Artifact Registry Writer (push images)
-#     - Cloud Run Admin (deploy)
-#     - Service Account User (Cloud Run runtime)
-#   GEMINI_API_KEY: (optional) Google Gemini API key for demo mode; if set, deploys with CLOUDSHIFT_DEPLOYMENT_MODE=demo
+#   GCP_SA_KEY: JSON key for a service account in the deploy project (emea-mas) with:
+#     - Artifact Registry Writer, Cloud Run Admin, Service Account User
+#   GEMINI_API_KEY: (optional) Google Gemini API key for demo mode
+# See docs/deploy-emea-mas.md for SA setup.
 name: Build and Deploy to Cloud Run
 
 on:
@@ -16,7 +15,7 @@ on:
       - master
 
 env:
-  GCP_PROJECT_ID: refactord-479213
+  GCP_PROJECT_ID: emea-mas
   GCP_REGION: us-central1
   CLOUD_RUN_SERVICE: cloudshift
   ARTIFACT_REGISTRY: us-central1-docker.pkg.dev

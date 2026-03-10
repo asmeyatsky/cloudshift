@@ -25,3 +25,4 @@ ui/vite.config.js
 ui/vite.config.d.ts
 vscode-extension/out/
 *.dSYM/
+deploy/gcp/key-*.json
