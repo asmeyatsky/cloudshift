@@ -29,6 +29,15 @@ gcloud projects add-iam-policy-binding refactord-479213 \
 gcloud projects add-iam-policy-binding refactord-479213 \
   --member="serviceAccount:${SA}" \
   --role="roles/iam.serviceAccountUser"
+
+# Required for gcloud builds submit (upload source to Cloud Build bucket)
+gcloud projects add-iam-policy-binding refactord-479213 \
+  --member="serviceAccount:${SA}" \
+  --role="roles/serviceusage.serviceUsageConsumer"
+
+gcloud projects add-iam-policy-binding refactord-479213 \
+  --member="serviceAccount:${SA}" \
+  --role="roles/storage.objectAdmin"
 ```
 
 ### 2. Create a JSON key and add it to GitHub Secrets
