@@ -30,9 +30,12 @@ export function useScan() {
           try {
             const statusRes = await scanApi.status(res.data.job_id);
             if (statusRes.success) {
+              const data = statusRes.data as { error?: string; files?: { path?: string; services_detected?: string[]; confidence?: number }[]; source_provider?: string; target_provider?: string };
+              if (data.error) {
+                throw new Error(data.error);
+              }
               setScanResult(statusRes.data);
               // Map backend files to ManifestEntry[]
-              const data = statusRes.data as { files?: { path?: string; services_detected?: string[]; confidence?: number }[]; source_provider?: string; target_provider?: string };
               const entries: ManifestEntry[] = (data.files || []).map((f, idx) => ({
                   id: `e-${idx}`,
                   filePath: f.path ?? "",

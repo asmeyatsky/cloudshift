@@ -49,9 +49,15 @@ async function request<T>(
       }
     }
     if (!res.ok) {
+      const msg =
+        typeof data.detail === "string"
+          ? data.detail
+          : Array.isArray(data.detail)
+            ? data.detail[0]?.msg
+            : data.error ?? data.message;
       return {
         success: false,
-        error: typeof data.detail === "string" ? data.detail : data.detail?.[0]?.msg ?? res.statusText,
+        error: msg && String(msg).trim() ? String(msg) : res.status === 429 ? "Too many requests. Try again in a minute." : res.statusText,
       };
     }
     return { success: true, data: data as T };

@@ -36,8 +36,18 @@ async def _run_scan(job_id: str, use_case: ScanProjectUseCase, dto: ScanRequest)
         _results[job_id] = result.model_dump(mode="json")
         await manager.broadcast({"job_id": job_id, "type": "scan", "status": "completed"})
     except Exception as exc:
-        _results[job_id] = {"error": str(exc)}
-        await manager.broadcast({"job_id": job_id, "type": "scan", "status": "failed", "error": str(exc)})
+        err_msg = str(exc)
+        _results[job_id] = {
+            "project_id": "",
+            "root_path": dto.root_path,
+            "source_provider": dto.source_provider.name,
+            "target_provider": dto.target_provider.name,
+            "files": [],
+            "total_files_scanned": 0,
+            "services_found": [],
+            "error": err_msg,
+        }
+        await manager.broadcast({"job_id": job_id, "type": "scan", "status": "failed", "error": err_msg})
 
 
 @router.post(
