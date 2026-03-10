@@ -203,6 +203,11 @@ export default function Layout() {
             </div>
           </div>
 
+          {authMode === "searce_id" && (
+            <p className="mt-3 px-1 text-xs text-gray-500">
+              Signed in via IAP
+            </p>
+          )}
           {authMode === "password" && (
             <button
               onClick={() => logout()}
