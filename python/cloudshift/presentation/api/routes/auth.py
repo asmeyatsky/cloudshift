@@ -29,17 +29,17 @@ async def login(
     body: LoginBody,
     settings=Depends(get_settings),
 ) -> dict:
-    """Issue a JWT for valid username/password when auth_mode=password. Rate limited (30/min per IP)."""
+    """Issue a JWT for valid username/password when auth_mode=password. Rate limited only in password mode."""
+    if settings.auth_mode != "password":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Login only available when auth_mode is password",
+        )
     client_ip = request.client.host if request.client else "unknown"
     if not login_limiter.is_allowed(client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts. Try again in a minute.",
-        )
-    if settings.auth_mode != "password":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Login only available when auth_mode is password",
         )
     username = body.username or getattr(body, "name", "")
     password = body.password
