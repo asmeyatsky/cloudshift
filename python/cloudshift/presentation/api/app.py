@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from cloudshift.infrastructure.config.settings import Settings
 from cloudshift.presentation.api.dependencies import verify_api_key
@@ -89,5 +89,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health", tags=["meta"], summary="Health check")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # -- Root and favicon (serve Web UI, avoid 404s) -----------------------
+    static_path = settings.static_dir.resolve()
+    index_html = static_path / "index.html"
+    if index_html.exists():
+
+        @app.get("/", include_in_schema=False)
+        async def root() -> FileResponse:
+            return FileResponse(index_html, media_type="text/html")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        return Response(status_code=204)
 
     return app

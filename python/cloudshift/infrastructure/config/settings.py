@@ -54,6 +54,9 @@ class Settings(BaseSettings):
         description="Whitelist of allowed test commands for validation to prevent RCE.",
     )
 
+    # -- Static files (Web UI) --
+    static_dir: Path = Field(default=Path("static"), description="Directory for static assets (index.html, etc.).")
+
     # -- API / Security --
     api_key: str | None = Field(default=None, description="Static API key for authentication.")
     allowed_origins: list[str] = Field(
