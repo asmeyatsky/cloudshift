@@ -9,7 +9,7 @@ import type {
   Pattern,
   FileDiff,
 } from "../types";
-import { useAuthStore.getState } from "../store/authStore";
+import { useAuthStore } from "../store/authStore";
 
 const BASE = "/api";
 

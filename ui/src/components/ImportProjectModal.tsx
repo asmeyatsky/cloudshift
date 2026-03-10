@@ -38,7 +38,7 @@ export default function ImportProjectModal({ open, onClose }: Props) {
   const [localPath, setLocalPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [source, setSource] = useState<CloudProvider>("aws");
-  const [target, setTarget] = useState<CloudProvider>("gcp"); // GCP only for migration target
+  const target: CloudProvider = "gcp"; // GCP only for migration target
   const [snippetContent, setSnippetContent] = useState("");
   const [snippetLanguage, setSnippetLanguage] = useState("PYTHON");
   const [snippetFilename, setSnippetFilename] = useState("");
@@ -364,8 +364,7 @@ export default function ImportProjectModal({ open, onClose }: Props) {
               <select
                 value={target}
                 className="w-full rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2.5 text-sm text-gray-200 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
-                readOnly
-                aria-readonly
+                disabled
               >
                 <option value={TARGET_PROVIDER_GCP.value}>{TARGET_PROVIDER_GCP.label}</option>
               </select>
