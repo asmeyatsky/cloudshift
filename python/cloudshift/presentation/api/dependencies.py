@@ -64,15 +64,16 @@ async def verify_auth(request: Request):
         return
 
     if mode == "searce_id":
-        # Demo: accept X-Searce-ID or Bearer token (Searce ID token)
+        # Demo: accept X-Searce-ID, Bearer token, or IAP JWT (LB injects when behind IAP)
         searce_id = request.headers.get("X-Searce-ID")
         token = _get_bearer_token(request)
-        if not searce_id and not token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Searce ID required (X-Searce-ID or Authorization Bearer)",
-            )
-        return
+        iap_jwt = request.headers.get("X-Goog-IAP-JWT-Assertion")
+        if searce_id or token or iap_jwt:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Searce ID required (X-Searce-ID or Authorization Bearer)",
+        )
 
     if mode == "password":
         token = _get_bearer_token(request)
