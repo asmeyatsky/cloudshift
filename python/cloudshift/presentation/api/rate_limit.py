@@ -28,5 +28,5 @@ class RateLimiter:
         self._attempts.clear()
 
 
-# Global limiter for login (5 per minute per IP)
-login_limiter = RateLimiter(max_attempts=5, window_sec=60.0)
+# Login limiter: 30/min per IP (behind LB/proxy many users can share one IP)
+login_limiter = RateLimiter(max_attempts=30, window_sec=60.0)

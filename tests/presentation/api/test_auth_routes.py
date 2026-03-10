@@ -98,7 +98,7 @@ class TestLogin:
 
         login_limiter.reset()
         client = TestClient(app_password_mode)
-        for _ in range(5):
+        for _ in range(30):
             client.post("/api/auth/login", json={"username": "wrong", "password": "wrong"})
         resp = client.post("/api/auth/login", json={"username": "a", "password": "b"})
         assert resp.status_code == 429

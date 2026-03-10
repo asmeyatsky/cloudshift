@@ -39,7 +39,7 @@ else
 fi
 PROXY_NAME=$(gcloud compute target-https-proxies list --global --project="$PROJECT" --filter="urlMap~$URL_MAP_NAME" --format='value(name)' --limit=1)
 if [[ -n "$PROXY_NAME" ]]; then
-  CURRENT=$(gcloud compute target-https-proxies describe "$PROXY_NAME" --global --project="$PROJECT" --format='value(sslCertificates)' | paste -sd, -)
+  CURRENT=$(gcloud compute target-https-proxies describe "$PROXY_NAME" --global --project="$PROJECT" --format='value(sslCertificates)' | tr ';' ',')
   NEW_CERT="https://www.googleapis.com/compute/v1/projects/${PROJECT}/global/sslCertificates/${SSL_CERT_NAME}"
   if [[ "$CURRENT" != *"$SSL_CERT_NAME"* ]]; then
     CERT_LIST="${CURRENT:+${CURRENT},}${NEW_CERT}"

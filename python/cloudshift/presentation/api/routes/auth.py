@@ -29,7 +29,7 @@ async def login(
     body: LoginBody,
     settings=Depends(get_settings),
 ) -> dict:
-    """Issue a JWT for valid username/password when auth_mode=password. Rate limited (5/min per IP)."""
+    """Issue a JWT for valid username/password when auth_mode=password. Rate limited (30/min per IP)."""
     client_ip = request.client.host if request.client else "unknown"
     if not login_limiter.is_allowed(client_ip):
         raise HTTPException(

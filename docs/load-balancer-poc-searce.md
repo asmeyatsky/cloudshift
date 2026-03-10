@@ -56,13 +56,38 @@ The load balancer’s **HTTPS front-end** must use an SSL certificate that is va
 
 After the cert includes cloudshift.poc-searce.com and is attached to the LB frontend, HTTPS to **https://cloudshift.poc-searce.com/** will validate correctly.
 
-## IAP / auth (optional)
+## Enable IAP on the backend
 
-If **auto-sow.poc-searce.com** is behind Identity-Aware Proxy (IAP) and you want the same for CloudShift:
+To require Google sign-in for **https://cloudshift.poc-searce.com/** (same idea as auto-sow):
 
-- IAP is enabled at the **backend service** level. When you add the **cloudshift-backend** to the LB, you can turn on IAP for that backend in **Security** → **Identity-Aware Proxy** so only allowed users can reach cloudshift.poc-searce.com.
+### 1. Turn on IAP for the backend service
 
-If you do **not** want IAP for CloudShift (e.g. public or API-key-only), leave IAP off for the CloudShift backend service.
+**Console (recommended):**
+
+1. Open **Security** → **Identity-Aware Proxy**:  
+   [IAP – emea-mas](https://console.cloud.google.com/security/iap?project=emea-mas)
+2. In the list, find the row for **Backend services** / **cloudshift-backend** (resource type “Backend service”, name “cloudshift-backend”).
+3. Turn **ON** the toggle for that row.  
+   If you don’t see **cloudshift-backend**, use the filter or open **Backend services** in the left menu and select **cloudshift-backend**, then look for the IAP toggle.
+4. When prompted, confirm **Enable** for the backend service.
+
+**gcloud:**
+
+```bash
+gcloud iap web enable \
+  --resource-type=backend-services \
+  --service=cloudshift-backend \
+  --project=emea-mas
+```
+
+### 2. Restrict who can access the app
+
+1. On the same [IAP page](https://console.cloud.google.com/security/iap?project=emea-mas), click **cloudshift-backend** (or the **Backend services** group).
+2. Click **Add principal** (or **Manage access**).
+3. Add the users or groups that should be allowed (e.g. `your@email.com` or a Google Group). Role: **IAP-secured Web App User**.
+4. Save. Only those principals will get past the Google sign-in; others will see “Access denied”.
+
+After this, opening **https://cloudshift.poc-searce.com/** in a browser will redirect to Google sign-in, then show the app if the user is allowed.
 
 ## After running the script: DNS
 
