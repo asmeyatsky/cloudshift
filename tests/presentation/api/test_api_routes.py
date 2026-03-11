@@ -757,7 +757,7 @@ class TestBackgroundRunners:
         use_case.execute.return_value = mock_result
 
         with patch.object(manager, "broadcast", new_callable=AsyncMock):
-            await _run_plan("planok", use_case, MagicMock())
+            await _run_plan("planok", use_case, MagicMock(), MagicMock())
             assert "planok" in _results
             _results.pop("planok", None)
 
@@ -768,7 +768,7 @@ class TestBackgroundRunners:
         use_case.execute.side_effect = RuntimeError("plan boom")
 
         with patch.object(manager, "broadcast", new_callable=AsyncMock):
-            await _run_plan("planfail", use_case, MagicMock())
+            await _run_plan("planfail", use_case, MagicMock(), MagicMock())
             assert "error" in _results["planfail"]
             _results.pop("planfail", None)
 

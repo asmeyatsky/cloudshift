@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS transform_metadata (
 );
 """
 
+_CREATE_JOB_RESULTS_TABLE = """
+CREATE TABLE IF NOT EXISTS job_results (
+    job_id      TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    PRIMARY KEY (job_id, kind)
+);
+"""
+
 
 class SQLiteProjectRepository:
     """Implements ProjectRepositoryPort backed by a local SQLite database.
@@ -75,6 +84,7 @@ class SQLiteProjectRepository:
         self._conn.execute(_CREATE_TABLE)
         self._conn.execute(_CREATE_SCAN_MANIFESTS_TABLE)
         self._conn.execute(_CREATE_TRANSFORM_METADATA_TABLE)
+        self._conn.execute(_CREATE_JOB_RESULTS_TABLE)
         self._conn.commit()
 
     def save(self, project: Project) -> str:
@@ -202,6 +212,24 @@ class SQLiteProjectRepository:
     async def get_transform_metadata(self, plan_id: str) -> SimpleNamespace | None:
         """Return transform metadata for validate use case. Run in caller thread (SQLite is thread-local)."""
         return self._get_transform_metadata_sync(plan_id)
+
+    def save_job_result(self, kind: str, job_id: str, result: dict) -> None:
+        """Persist job result so GET can find it on another instance (e.g. Cloud Run)."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO job_results (job_id, kind, result_json) VALUES (?, ?, ?)",
+            (job_id, kind, json.dumps(result)),
+        )
+        self._conn.commit()
+
+    def get_job_result(self, kind: str, job_id: str) -> dict | None:
+        """Return persisted job result or None."""
+        row = self._conn.execute(
+            "SELECT result_json FROM job_results WHERE job_id = ? AND kind = ?",
+            (job_id, kind),
+        ).fetchone()
+        if row is None:
+            return None
+        return json.loads(row["result_json"])
 
     def close(self) -> None:
         self._conn.close()

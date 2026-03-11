@@ -17,13 +17,19 @@ from cloudshift.presentation.api.schemas import (
 )
 from cloudshift.presentation.api.plan_store import register_plan
 from cloudshift.presentation.api.websocket import manager
+from cloudshift.presentation.api.dependencies import get_container
 
 router = APIRouter(prefix="/api/plan", tags=["plan"])
 
 _results: dict[str, Any] = {}
 
 
-async def _run_plan(job_id: str, use_case: GeneratePlanUseCase, dto: PlanRequest) -> None:
+async def _run_plan(
+    job_id: str,
+    use_case: GeneratePlanUseCase,
+    dto: PlanRequest,
+    container: Any,
+) -> None:
     await manager.broadcast({"job_id": job_id, "type": "plan", "status": "started"})
     try:
         result = await use_case.execute(dto)
@@ -31,10 +37,12 @@ async def _run_plan(job_id: str, use_case: GeneratePlanUseCase, dto: PlanRequest
         _results[job_id] = dumped
         if not result.error and result.plan_id:
             register_plan(result.plan_id, dumped)
+        if getattr(container, "project_repository", None):
+            container.project_repository.save_job_result("plan", job_id, dumped)
         await manager.broadcast({"job_id": job_id, "type": "plan", "status": "completed"})
     except Exception as exc:
         err_msg = str(exc)
-        _results[job_id] = {
+        dumped_err = {
             "plan_id": "",
             "project_id": dto.project_id,
             "steps": [],
@@ -43,6 +51,9 @@ async def _run_plan(job_id: str, use_case: GeneratePlanUseCase, dto: PlanRequest
             "warnings": [],
             "error": err_msg,
         }
+        _results[job_id] = dumped_err
+        if getattr(container, "project_repository", None):
+            container.project_repository.save_job_result("plan", job_id, dumped_err)
         await manager.broadcast({"job_id": job_id, "type": "plan", "status": "failed", "error": err_msg})
 
 
@@ -56,6 +67,7 @@ async def start_plan(
     body: PlanRequestBody,
     background: BackgroundTasks,
     use_case: GeneratePlanUseCase = Depends(get_plan_use_case),
+    container: Any = Depends(get_container),
 ) -> JobAccepted:
     job_id = uuid.uuid4().hex[:12]
     dto = PlanRequest(
@@ -64,7 +76,7 @@ async def start_plan(
         strategy=body.strategy,
         max_parallel=body.max_parallel,
     )
-    background.add_task(_run_plan, job_id, use_case, dto)
+    background.add_task(_run_plan, job_id, use_case, dto, container)
     return JobAccepted(job_id=job_id)
 
 
@@ -74,7 +86,11 @@ async def start_plan(
     responses={404: {"description": "Job not found or still running"}},
     summary="Retrieve plan results",
 )
-async def get_plan_result(job_id: str) -> PlanResultResponse:
-    if job_id not in _results:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found or still in progress")
-    return PlanResultResponse(**_results[job_id])
+async def get_plan_result(job_id: str, container: Any = Depends(get_container)) -> PlanResultResponse:
+    if job_id in _results:
+        return PlanResultResponse(**_results[job_id])
+    if getattr(container, "project_repository", None):
+        stored = container.project_repository.get_job_result("plan", job_id)
+        if stored:
+            return PlanResultResponse(**stored)
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found or still in progress")
