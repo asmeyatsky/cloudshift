@@ -57,6 +57,7 @@ jobs:
           docker build -t "${IMAGE}" -f docker/Dockerfile .
           docker push "${IMAGE}"
 
+      # max-instances=1 so plan/scan/apply job results (in-memory + SQLite) are visible to polling GETs
       - name: Deploy to Cloud Run
         run: |
           IMAGE_TAG="${{ steps.build.outputs.IMAGE_TAG }}"
@@ -71,6 +72,7 @@ jobs:
             --platform=managed \
             --set-env-vars="${ENV_VARS}" \
             --allow-unauthenticated \
+            --max-instances=1 \
             --project=${{ env.GCP_PROJECT_ID }}
 
       - name: Output service URL
