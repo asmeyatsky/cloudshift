@@ -167,12 +167,23 @@ export interface ScanResult {
   resourcesFound?: string[];
 }
 
+/** Steps grouped by pattern for approve-by-pattern (approve once, apply to all similar). */
+export interface StepsByPattern {
+  pattern_id: string;
+  description: string;
+  count: number;
+  step_ids: string[];
+  file_paths_sample: string[];
+}
+
 export interface PlanResult {
   id: string;
   /** Job ID from POST /plan (use for GET /plan/{job_id} e.g. diffs). */
   jobId?: string;
   manifestId: string;
   transformations: Transformation[];
+  /** Steps grouped by pattern; use for approve-by-pattern UX. */
+  stepsByPattern: StepsByPattern[];
   diffs: FileDiff[];
   estimatedChanges: number;
   riskLevel: Severity;

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from typing import Protocol
 
-from cloudshift.application.dtos.plan import PlanRequest, PlanResult, TransformStep
+from cloudshift.application.dtos.plan import PlanRequest, PlanResult, StepsByPattern, TransformStep
 from cloudshift.domain.value_objects.types import ConfidenceScore
 
 
@@ -131,10 +132,26 @@ class GeneratePlanUseCase:
 
         avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
 
+        # Group by pattern for approve-by-pattern UX (human approves once per pattern, apply to all similar).
+        by_pattern: dict[tuple[str, str], list[TransformStep]] = defaultdict(list)
+        for s in filtered:
+            by_pattern[(s.pattern_id, s.description)].append(s)
+        steps_by_pattern = [
+            StepsByPattern(
+                pattern_id=pid,
+                description=desc,
+                count=len(group),
+                step_ids=[s.step_id for s in group],
+                file_paths_sample=list({s.file_path for s in group})[:5],
+            )
+            for (pid, desc), group in sorted(by_pattern.items(), key=lambda x: -len(x[1]))
+        ]
+
         return PlanResult(
             plan_id=plan_id,
             project_id=request.project_id,
             steps=filtered,
+            steps_by_pattern=steps_by_pattern,
             estimated_files_changed=len({s.file_path for s in filtered}),
             estimated_confidence=round(avg_conf, 4),
             warnings=warnings,

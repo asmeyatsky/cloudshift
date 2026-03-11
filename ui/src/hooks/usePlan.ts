@@ -5,6 +5,7 @@ import type { PlanResult } from "../types";
 
 function mapPlanResponse(data: Record<string, unknown>, jobId?: string): PlanResult {
   const steps = (data.steps as Array<Record<string, unknown>>) ?? [];
+  const stepsByPatternRaw = (data.steps_by_pattern as Array<Record<string, unknown>>) ?? [];
   const planId = (data.plan_id as string) ?? "";
   return {
     id: planId,
@@ -21,6 +22,13 @@ function mapPlanResponse(data: Record<string, unknown>, jobId?: string): PlanRes
       after: "",
       confidence: (s.confidence as number) ?? 0,
       status: "pending" as const,
+    })),
+    stepsByPattern: stepsByPatternRaw.map((g) => ({
+      pattern_id: (g.pattern_id as string) ?? "",
+      description: (g.description as string) ?? "",
+      count: (g.count as number) ?? 0,
+      step_ids: Array.isArray(g.step_ids) ? (g.step_ids as string[]) : [],
+      file_paths_sample: Array.isArray(g.file_paths_sample) ? (g.file_paths_sample as string[]) : [],
     })),
     diffs: [],
     estimatedChanges: (data.estimated_files_changed as number) ?? 0,
@@ -58,8 +66,8 @@ export function usePlan() {
         return Promise.reject(new Error("Plan creation failed"));
       }
       const jobId = "job_id" in res.data ? res.data.job_id : (res.data as { id: string }).id;
-      const pollMs = 1500;
-      const maxAttempts = 120;
+      const pollMs = 2000;
+      const maxAttempts = 1e6; // No timeout: repo size unknown; keep polling until result or error
       let attempts = 0;
       return new Promise<void>((resolve, reject) => {
         const poll = async () => {

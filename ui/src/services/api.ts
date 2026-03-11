@@ -114,8 +114,9 @@ export const planApi = {
 };
 
 export const applyApi = {
-  start: (planId: string) =>
-    post<JobAccepted>("/apply", { plan_id: planId }),
+  /** Start apply. Pass optional stepIds to apply only those steps (e.g. from approved pattern groups). */
+  start: (planId: string, stepIds?: string[]) =>
+    post<JobAccepted>("/apply", { plan_id: planId, step_ids: stepIds ?? [] }),
   status: (jobId: string) =>
     get<ApplyResult>(`/apply/${jobId}`),
 };

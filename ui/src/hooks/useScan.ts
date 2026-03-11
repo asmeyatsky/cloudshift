@@ -31,8 +31,8 @@ export function useScan() {
       }
 
       return new Promise<void>((resolve, reject) => {
-        const pollMs = 1500;
-        const maxAttempts = 120; // 3 min
+        const pollMs = 2000;
+        const maxAttempts = 1e6; // No timeout: repo size unknown
         let attempts = 0;
         const check = async () => {
           try {

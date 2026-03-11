@@ -148,10 +148,21 @@ class TransformStepResponse(BaseModel):
     depends_on: list[str] = Field(default_factory=list)
 
 
+class StepsByPatternResponse(BaseModel):
+    """Steps grouped by pattern for approve-by-pattern UX."""
+
+    pattern_id: str
+    description: str
+    count: int
+    step_ids: list[str] = Field(default_factory=list)
+    file_paths_sample: list[str] = Field(default_factory=list)
+
+
 class PlanResultResponse(BaseModel):
     plan_id: str
     project_id: str
     steps: list[TransformStepResponse] = Field(default_factory=list)
+    steps_by_pattern: list[StepsByPatternResponse] = Field(default_factory=list)
     estimated_files_changed: int = 0
     estimated_confidence: float = 0.0
     warnings: list[str] = Field(default_factory=list)

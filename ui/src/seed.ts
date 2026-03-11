@@ -244,6 +244,10 @@ export const SEED_PLAN_RESULT: PlanResult = {
   id: "plan-b4a3c2d1",
   manifestId: "manifest-001",
   transformations: SEED_ENTRIES.flatMap((e) => e.transformations),
+  stepsByPattern: [
+    { pattern_id: "s3-client-init", description: "S3 Client Init → GCS", count: 3, step_ids: [], file_paths_sample: [] },
+    { pattern_id: "sqs-send", description: "SQS send_message → Pub/Sub", count: 2, step_ids: [], file_paths_sample: [] },
+  ],
   diffs: [],
   estimatedChanges: 14,
   riskLevel: "warning",

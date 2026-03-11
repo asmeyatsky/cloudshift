@@ -49,8 +49,8 @@ export function useApply() {
         return Promise.reject(new Error("Apply failed to start"));
       }
       const jobId = "job_id" in res.data ? res.data.job_id : "";
-      const pollMs = 1500;
-      const maxAttempts = 120;
+      const pollMs = 2000;
+      const maxAttempts = 1e6; // No timeout: apply may touch many files
       let attempts = 0;
       return new Promise<void>((resolve, reject) => {
         const poll = async () => {

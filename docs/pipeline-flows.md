@@ -26,7 +26,7 @@ All three entry points (UI, API, CLI) follow the same ID handoff so that scan â†
   Returns: `202` + `job_id`. On success, plan is registered by `plan_id` for apply.
 
 - **GET /api/plan/{job_id}**  
-  Returns plan result with `plan_id`, `project_id`, `steps`, `estimated_files_changed`, etc. Use `plan_id` for apply/validate.
+  Returns plan result with `plan_id`, `project_id`, `steps`, `steps_by_pattern` (grouped by pattern for approve-by-pattern), `estimated_files_changed`, etc. Use `plan_id` for apply/validate.
 
 - **POST /api/apply**  
   Body: `plan_id` (from plan result), optional `step_ids`, `dry_run`, `backup`, `check_git_clean`.  
