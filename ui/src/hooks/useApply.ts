@@ -26,13 +26,17 @@ export function useApply() {
   const setError = useOperationStore((s) => s.setError);
 
   const startApply = useCallback((): Promise<void> => {
-    if (!activeProject || !planResult || running) return Promise.reject(new Error("No project, plan, or already running"));
+    // Read latest from store at call time so pipeline (scan→plan→apply) works without waiting for re-render
+    const project = useProjectStore.getState().activeProject ?? activeProject;
+    const plan = useOperationStore.getState().planResult ?? planResult;
+    const isRunning = useOperationStore.getState().running ?? running;
+    if (!project || !plan || isRunning) return Promise.reject(new Error("No project, plan, or already running"));
 
     setRunning(true);
     setError(null);
     setApplyResult(null);
 
-    return applyApi.start(planResult.id).then((res) => {
+    return applyApi.start(plan.id).then((res) => {
       if (!res.success) {
         const msg = res.error ?? "Apply failed to start";
         setError(msg);
