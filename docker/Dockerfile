@@ -26,6 +26,9 @@ RUN npm run build
 FROM --platform=linux/amd64 python:3.13-slim
 WORKDIR /app
 
+# Git required for POST /api/projects/from-git (clone repo for scan/plan/apply).
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+
 # Create a non-privileged user
 RUN groupadd -g 10001 cloudshift && \
     useradd -u 10001 -g cloudshift -m -s /sbin/nologin cloudshift
