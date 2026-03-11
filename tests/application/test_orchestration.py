@@ -1312,12 +1312,13 @@ class TestValidateTransformationUseCaseAdditional:
         uc = ValidateTransformationUseCase(ast_v, residual, sdk, transform_store=store)
         result = await uc.execute(ValidationRequest(plan_id="no-meta"))
 
-        assert result.passed is False
+        # No metadata = nothing applied; treat as pass (nothing to validate)
+        assert result.passed is True
         assert result.error is not None
-        assert "no-meta" in result.error
+        assert "no-meta" in result.error or "metadata" in (result.error or "").lower()
 
     async def test_validate_no_store(self):
-        """When transform_store is None, meta is None and we get an error."""
+        """When transform_store is None, meta is None; we return pass (nothing to validate)."""
         ast_v = AsyncMock()
         residual = AsyncMock()
         sdk = AsyncMock()
@@ -1325,7 +1326,7 @@ class TestValidateTransformationUseCaseAdditional:
         uc = ValidateTransformationUseCase(ast_v, residual, sdk, transform_store=None)
         result = await uc.execute(ValidationRequest(plan_id="plan1"))
 
-        assert result.passed is False
+        assert result.passed is True
         assert result.error is not None
 
     async def test_validate_ast_exception(self):

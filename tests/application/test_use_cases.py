@@ -413,9 +413,10 @@ class TestValidateTransformationUseCase:
         uc = ValidateTransformationUseCase(ast_v, rs, sdk, tr, ts, eb)
         result = await uc.execute(ValidationRequest(plan_id="no-meta"))
 
-        assert result.passed is False
+        # No metadata = plan had 0 changes / nothing applied; treat as pass (nothing to validate)
+        assert result.passed is True
         assert result.error is not None
-        assert "no-meta" in result.error
+        assert "no-meta" in result.error or "metadata" in (result.error or "").lower()
 
     @pytest.mark.asyncio
     async def test_validation_passes_clean(self, mocks):

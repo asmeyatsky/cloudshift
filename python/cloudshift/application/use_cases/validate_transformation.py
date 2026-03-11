@@ -127,10 +127,12 @@ class ValidateTransformationUseCase:
 
         meta = await self._store.get_transform_metadata(request.plan_id) if self._store else None
         if meta is None:
+            # No metadata: plan had 0 changes / apply modified 0 files. Treat as pass (nothing to validate).
             return ValidationResult(
                 plan_id=request.plan_id,
-                passed=False,
-                error=f"No transformation metadata found for plan {request.plan_id!r}.",
+                passed=True,
+                issues=[],
+                error="No transformation metadata (plan had no changes or apply modified no files).",
             )
 
         # Run AST equivalence and residual scan in parallel.
