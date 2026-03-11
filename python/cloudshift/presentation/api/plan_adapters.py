@@ -70,7 +70,10 @@ class PlanPatternEngineAdapter:
             language=language,
         )
         services_lower = [s.lower() for s in services]
-        patterns = [p for p in patterns if p.source_service.lower() in services_lower]
+        # When scan reports generic "cdk" or "sdk" (e.g. aws-cdk-examples), no pattern has source_service cdk/sdk.
+        # Keep all patterns for this language so the engine can match concrete usage (S3Client, etc.).
+        if not any(g in services_lower for g in ("cdk", "sdk")):
+            patterns = [p for p in patterns if p.source_service.lower() in services_lower]
         if not patterns:
             return []
         try:
