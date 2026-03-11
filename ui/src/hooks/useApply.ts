@@ -33,10 +33,16 @@ export function useApply() {
     setApplyResult(null);
 
     return applyApi.start(planResult.id).then((res) => {
-      if (!res.success || !res.data) {
-        setError(res.error ?? "Apply failed to start");
+      if (!res.success) {
+        const msg = res.error ?? "Apply failed to start";
+        setError(msg);
         setRunning(false);
-        return Promise.reject(new Error(res.error ?? "Apply failed to start"));
+        return Promise.reject(new Error(msg));
+      }
+      if (!res.data) {
+        setError("Apply failed to start");
+        setRunning(false);
+        return Promise.reject(new Error("Apply failed to start"));
       }
       const jobId = "job_id" in res.data ? res.data.job_id : "";
       const pollMs = 1500;
@@ -47,23 +53,24 @@ export function useApply() {
           attempts += 1;
           const statusRes = await applyApi.status(jobId);
           if (statusRes.success && statusRes.data) {
-            setApplyResult(mapApplyResponse(statusRes.data as Record<string, unknown>));
+            setApplyResult(mapApplyResponse(statusRes.data as unknown as Record<string, unknown>));
             setRunning(false);
             resolve();
             return;
           }
+          const errMsg = !statusRes.success ? statusRes.error : undefined;
           if (attempts >= maxAttempts) {
-            setError(statusRes.error ?? "Apply timed out");
+            setError(errMsg ?? "Apply timed out");
             setRunning(false);
-            reject(new Error(statusRes.error ?? "Apply timed out"));
+            reject(new Error(errMsg ?? "Apply timed out"));
             return;
           }
-          if (statusRes.error?.toLowerCase().includes("not found") || statusRes.error?.toLowerCase().includes("in progress")) {
+          if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {
             setTimeout(poll, pollMs);
           } else {
-            setError(statusRes.error ?? "Apply failed");
+            setError(errMsg ?? "Apply failed");
             setRunning(false);
-            reject(new Error(statusRes.error ?? "Apply failed"));
+            reject(new Error(errMsg ?? "Apply failed"));
           }
         };
         poll();

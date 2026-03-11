@@ -46,10 +46,16 @@ export function useValidation() {
     setError(null);
 
     return validationApi.run(planId).then((res) => {
-      if (!res.success || !res.data) {
-        setError(res.error ?? "Validation failed to start");
+      if (!res.success) {
+        const msg = res.error ?? "Validation failed to start";
+        setError(msg);
         setLoading(false);
-        return Promise.reject(new Error(res.error ?? "Validation failed to start"));
+        return Promise.reject(new Error(msg));
+      }
+      if (!res.data) {
+        setError("Validation failed to start");
+        setLoading(false);
+        return Promise.reject(new Error("Validation failed to start"));
       }
       const jobId = "job_id" in res.data ? res.data.job_id : "";
       const pollMs = 1500;
@@ -60,23 +66,24 @@ export function useValidation() {
           attempts += 1;
           const statusRes = await validationApi.status(jobId);
           if (statusRes.success && statusRes.data) {
-            setResult(mapValidationResponse(statusRes.data as Record<string, unknown>));
+            setResult(mapValidationResponse(statusRes.data as unknown as Record<string, unknown>));
             setLoading(false);
             resolve();
             return;
           }
+          const errMsg = !statusRes.success ? statusRes.error : undefined;
           if (attempts >= maxAttempts) {
-            setError(statusRes.error ?? "Validation timed out");
+            setError(errMsg ?? "Validation timed out");
             setLoading(false);
-            reject(new Error(statusRes.error ?? "Validation timed out"));
+            reject(new Error(errMsg ?? "Validation timed out"));
             return;
           }
-          if (statusRes.error?.toLowerCase().includes("not found") || statusRes.error?.toLowerCase().includes("in progress")) {
+          if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {
             setTimeout(poll, pollMs);
           } else {
-            setError(statusRes.error ?? "Validation failed");
+            setError(errMsg ?? "Validation failed");
             setLoading(false);
-            reject(new Error(statusRes.error ?? "Validation failed"));
+            reject(new Error(errMsg ?? "Validation failed"));
           }
         };
         poll();

@@ -24,7 +24,8 @@ describe("api pipeline flow", () => {
         body: expect.stringContaining("project_id"),
       }),
     );
-    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    const req = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = JSON.parse((req?.body as string) ?? "{}");
     expect(body.root_path).toBe("/path");
     expect(body.source_provider).toBe("AWS");
     expect(body.target_provider).toBe("GCP");
@@ -37,7 +38,8 @@ describe("api pipeline flow", () => {
       json: async () => ({ job_id: "j1" }),
     });
     await scanApi.start("/path", "AWS", "GCP");
-    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    const req = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = JSON.parse((req?.body as string) ?? "{}");
     expect(body).not.toHaveProperty("project_id");
   });
 
@@ -47,7 +49,8 @@ describe("api pipeline flow", () => {
       json: async () => ({ job_id: "j2" }),
     });
     await planApi.create("proj-1", "proj-1");
-    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    const req = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = JSON.parse((req?.body as string) ?? "{}");
     expect(body.project_id).toBe("proj-1");
     expect(body.manifest_id).toBe("proj-1");
   });
@@ -58,7 +61,8 @@ describe("api pipeline flow", () => {
       json: async () => ({ job_id: "j3" }),
     });
     await applyApi.start("plan-abc");
-    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    const req = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = JSON.parse((req?.body as string) ?? "{}");
     expect(body.plan_id).toBe("plan-abc");
   });
 
@@ -68,7 +72,8 @@ describe("api pipeline flow", () => {
       json: async () => ({ job_id: "j4" }),
     });
     await validationApi.run("plan-abc");
-    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    const req = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = JSON.parse((req?.body as string) ?? "{}");
     expect(body.plan_id).toBe("plan-abc");
   });
 });

@@ -66,19 +66,15 @@ export default function Dashboard() {
   const setEntries = useManifestStore((s) => s.setEntries);
 
   const scanResult = useOperationStore((s) => s.scanResult);
-  const setScanResult = useOperationStore((s) => s.setScanResult);
   const planResult = useOperationStore((s) => s.planResult);
-  const setPlanResult = useOperationStore((s) => s.setPlanResult);
   const applyResult = useOperationStore((s) => s.applyResult);
-  const setApplyResult = useOperationStore((s) => s.setApplyResult);
-  const setDiffs = useOperationStore((s) => s.setDiffs);
   const resetOps = useOperationStore((s) => s.reset);
 
   const validationResult = useValidationStore((s) => s.result);
   const setValidationResult = useValidationStore((s) => s.setResult);
 
   const { startScan } = useScan();
-  const { createPlan, planResult: currentPlanResult } = usePlan();
+  const { createPlan } = usePlan();
   const { startApply } = useApply();
   const { runValidation } = useValidation();
 
@@ -95,15 +91,6 @@ export default function Dashboard() {
     },
     [],
   );
-
-  const wait = (ms: number) =>
-    new Promise<void>((resolve) => {
-      const check = () => {
-        if (abortRef.current) return resolve();
-        setTimeout(resolve, ms);
-      };
-      check();
-    });
 
   const runPipeline = useCallback(async () => {
     if (!activeProject || pipelineRunning) return;

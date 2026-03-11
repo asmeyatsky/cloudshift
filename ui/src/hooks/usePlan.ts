@@ -46,10 +46,16 @@ export function usePlan() {
     setDiffs([]);
 
     return planApi.create(activeProject.id, activeProject.id).then((res) => {
-      if (!res.success || !res.data) {
-        setError(res.error ?? "Plan creation failed");
+      if (!res.success) {
+        const msg = res.error ?? "Plan creation failed";
+        setError(msg);
         setRunning(false);
-        return Promise.reject(new Error(res.error ?? "Plan creation failed"));
+        return Promise.reject(new Error(msg));
+      }
+      if (!res.data) {
+        setError("Plan creation failed");
+        setRunning(false);
+        return Promise.reject(new Error("Plan creation failed"));
       }
       const jobId = "job_id" in res.data ? res.data.job_id : (res.data as { id: string }).id;
       const pollMs = 1500;
@@ -60,7 +66,7 @@ export function usePlan() {
           attempts += 1;
           const planRes = await planApi.get(jobId);
           if (planRes.success && planRes.data) {
-            const raw = planRes.data as Record<string, unknown>;
+            const raw = planRes.data as unknown as Record<string, unknown>;
             if (raw.error) {
               setError(String(raw.error));
               setRunning(false);
@@ -74,18 +80,19 @@ export function usePlan() {
             resolve();
             return;
           }
+          const errMsg = !planRes.success ? planRes.error : undefined;
           if (attempts >= maxAttempts) {
-            setError(planRes.error ?? "Plan timed out");
+            setError(errMsg ?? "Plan timed out");
             setRunning(false);
-            reject(new Error(planRes.error ?? "Plan timed out"));
+            reject(new Error(errMsg ?? "Plan timed out"));
             return;
           }
-          if (planRes.error?.toLowerCase().includes("not found") || planRes.error?.toLowerCase().includes("in progress")) {
+          if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {
             setTimeout(poll, pollMs);
           } else {
-            setError(planRes.error ?? "Plan failed");
+            setError(errMsg ?? "Plan failed");
             setRunning(false);
-            reject(new Error(planRes.error ?? "Plan failed"));
+            reject(new Error(errMsg ?? "Plan failed"));
           }
         };
         poll();
