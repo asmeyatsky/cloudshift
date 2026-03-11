@@ -160,6 +160,8 @@ interface OperationState {
   progress: ProgressPayload | null;
   running: boolean;
   error: string | null;
+  /** Set by Dashboard when user cancels; hooks stop polling when true. */
+  pipelineAborted: boolean;
   setScanResult: (r: ScanResult | null) => void;
   setPlanResult: (r: PlanResult | null) => void;
   setApplyResult: (r: ApplyResult | null) => void;
@@ -167,6 +169,7 @@ interface OperationState {
   setProgress: (p: ProgressPayload | null) => void;
   setRunning: (running: boolean) => void;
   setError: (error: string | null) => void;
+  setPipelineAborted: (v: boolean) => void;
   reset: () => void;
 }
 
@@ -178,6 +181,7 @@ export const useOperationStore = create<OperationState>((set) => ({
   progress: null,
   running: false,
   error: null,
+  pipelineAborted: false,
   setScanResult: (scanResult) => set({ scanResult }),
   setPlanResult: (planResult) => set({ planResult }),
   setApplyResult: (applyResult) => set({ applyResult }),
@@ -185,6 +189,7 @@ export const useOperationStore = create<OperationState>((set) => ({
   setProgress: (progress) => set({ progress }),
   setRunning: (running) => set({ running }),
   setError: (error) => set({ error }),
+  setPipelineAborted: (pipelineAborted) => set({ pipelineAborted }),
   reset: () =>
     set({
       scanResult: null,
@@ -194,5 +199,6 @@ export const useOperationStore = create<OperationState>((set) => ({
       progress: null,
       running: false,
       error: null,
+      pipelineAborted: false,
     }),
 }));

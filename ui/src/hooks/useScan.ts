@@ -32,10 +32,15 @@ export function useScan() {
 
       return new Promise<void>((resolve, reject) => {
         const pollMs = 2000;
-        const maxAttempts = 1e6; // No timeout: repo size unknown
+        const maxAttempts = 300; // 10 min cap
         let attempts = 0;
         const check = async () => {
           try {
+            if (useOperationStore.getState().pipelineAborted) {
+              setRunning(false);
+              reject(new Error("Cancelled"));
+              return;
+            }
             attempts += 1;
             const statusRes = await scanApi.status(res.data.job_id);
             if (statusRes.success) {
@@ -61,7 +66,7 @@ export function useScan() {
               setRunning(false);
               resolve();
             } else {
-              if (attempts >= maxAttempts) throw new Error(statusRes.error ?? "Scan timed out");
+              if (attempts >= maxAttempts) throw new Error("Scan is taking longer than expected (10 min). Try Cancel and check server.");
               if (statusRes.error?.toLowerCase().includes("not found") || statusRes.error?.toLowerCase().includes("in progress")) {
                 setTimeout(check, pollMs);
               } else {

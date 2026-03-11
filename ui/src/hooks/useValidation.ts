@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { validationApi } from "../services/api";
-import { useProjectStore, useValidationStore } from "../store";
+import { useProjectStore, useOperationStore, useValidationStore } from "../store";
 import type { ValidationResult } from "../types";
 
 function mapValidationResponse(data: Record<string, unknown>): ValidationResult {
@@ -59,10 +59,15 @@ export function useValidation() {
       }
       const jobId = "job_id" in res.data ? res.data.job_id : "";
       const pollMs = 2000;
-      const maxAttempts = 1e6; // No timeout
+      const maxAttempts = 150; // 5 min cap
       let attempts = 0;
       return new Promise<void>((resolve, reject) => {
         const poll = async () => {
+          if (useOperationStore.getState().pipelineAborted) {
+            setLoading(false);
+            reject(new Error("Cancelled"));
+            return;
+          }
           attempts += 1;
           const statusRes = await validationApi.status(jobId);
           if (statusRes.success && statusRes.data) {
@@ -73,9 +78,9 @@ export function useValidation() {
           }
           const errMsg = !statusRes.success ? statusRes.error : undefined;
           if (attempts >= maxAttempts) {
-            setError(errMsg ?? "Validation timed out");
+            setError("Validation is taking longer than expected (5 min). Try Cancel.");
             setLoading(false);
-            reject(new Error(errMsg ?? "Validation timed out"));
+            reject(new Error("Validation timed out (5 min)"));
             return;
           }
           if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {

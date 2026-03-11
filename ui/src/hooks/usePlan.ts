@@ -67,10 +67,15 @@ export function usePlan() {
       }
       const jobId = "job_id" in res.data ? res.data.job_id : (res.data as { id: string }).id;
       const pollMs = 2000;
-      const maxAttempts = 1e6; // No timeout: repo size unknown; keep polling until result or error
+      const maxAttempts = 900; // 30 min cap; if still no result, server may be stuck
       let attempts = 0;
       return new Promise<void>((resolve, reject) => {
         const poll = async () => {
+          if (useOperationStore.getState().pipelineAborted) {
+            setRunning(false);
+            reject(new Error("Cancelled"));
+            return;
+          }
           attempts += 1;
           const planRes = await planApi.get(jobId);
           if (planRes.success && planRes.data) {
@@ -90,9 +95,9 @@ export function usePlan() {
           }
           const errMsg = !planRes.success ? planRes.error : undefined;
           if (attempts >= maxAttempts) {
-            setError(errMsg ?? "Plan timed out");
+            setError("Plan is taking longer than expected (30 min). Server may be stuck—try Cancel and check logs.");
             setRunning(false);
-            reject(new Error(errMsg ?? "Plan timed out"));
+            reject(new Error("Plan timed out (30 min)"));
             return;
           }
           if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {

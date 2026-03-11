@@ -28,8 +28,17 @@ import { useScan } from "../hooks/useScan";
 import { usePlan } from "../hooks/usePlan";
 import { useApply } from "../hooks/useApply";
 import { useValidation } from "../hooks/useValidation";
+import PipelineTimer from "../components/PipelineTimer";
 
 type PipelineStep = "scan" | "plan" | "apply" | "validate";
+
+/** Estimated duration per step (seconds) for countdown. Repo size unknown so these are rough. */
+const STEP_ESTIMATE_SECONDS: Record<PipelineStep, number> = {
+  scan: 120,
+  plan: 600,
+  apply: 300,
+  validate: 120,
+};
 
 const STEPS: {
   key: PipelineStep;
@@ -69,6 +78,7 @@ export default function Dashboard() {
   const planResult = useOperationStore((s) => s.planResult);
   const applyResult = useOperationStore((s) => s.applyResult);
   const resetOps = useOperationStore((s) => s.reset);
+  const setPipelineAborted = useOperationStore((s) => s.setPipelineAborted);
 
   const validationResult = useValidationStore((s) => s.result);
   const setValidationResult = useValidationStore((s) => s.setResult);
@@ -80,6 +90,7 @@ export default function Dashboard() {
 
   const [activityLog, setActivityLog] = useState<LogEntry[]>([]);
   const [runningStep, setRunningStep] = useState<PipelineStep | null>(null);
+  const [stepStartedAt, setStepStartedAt] = useState<number>(0);
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const abortRef = useRef(false);
 
@@ -95,10 +106,12 @@ export default function Dashboard() {
   const runPipeline = useCallback(async () => {
     if (!activeProject || pipelineRunning) return;
     abortRef.current = false;
+    setPipelineAborted(false);
     setPipelineRunning(true);
 
     // ── Scan ──
     setRunningStep("scan");
+    setStepStartedAt(Date.now());
     addLog(`Agent initiating project scan on ${activeProject.path}`, "agent");
     
     try {
@@ -115,6 +128,7 @@ export default function Dashboard() {
 
     // ── Plan ──
     setRunningStep("plan");
+    setStepStartedAt(Date.now());
     addLog("Generating transformation plan...", "agent");
     try {
       await createPlan();
@@ -132,6 +146,7 @@ export default function Dashboard() {
 
     // ── Apply ──
     setRunningStep("apply");
+    setStepStartedAt(Date.now());
     addLog("Applying transformations...", "agent");
     try {
       await startApply();
@@ -149,6 +164,7 @@ export default function Dashboard() {
 
     // ── Validate ──
     setRunningStep("validate");
+    setStepStartedAt(Date.now());
     addLog("Running validation checks...", "agent");
     const planIdForValidate = useOperationStore.getState().planResult?.id;
     if (planIdForValidate) {
@@ -171,6 +187,7 @@ export default function Dashboard() {
 
   const handleReset = useCallback(() => {
     abortRef.current = true;
+    setPipelineAborted(true);
     setPipelineRunning(false);
     setRunningStep(null);
     resetOps();
@@ -178,7 +195,7 @@ export default function Dashboard() {
     setEntries([]);
     setActivityLog([]);
     addLog("Pipeline reset. Ready to run.", "agent");
-  }, [resetOps, setValidationResult, setEntries, addLog]);
+  }, [setPipelineAborted, resetOps, setValidationResult, setEntries, addLog]);
 
   const getStepStatus = (step: PipelineStep): "idle" | "running" | "done" => {
     if (runningStep === step) return "running";
@@ -223,6 +240,14 @@ export default function Dashboard() {
 
         {activeProject && (
           <div className="flex items-center gap-3">
+            {pipelineRunning && (
+              <button
+                onClick={handleReset}
+                className="flex items-center gap-2 rounded-xl border border-amber-500/30 px-5 py-3 text-base font-medium text-amber-400 transition-all hover:bg-amber-500/10 hover:text-amber-300"
+              >
+                Cancel
+              </button>
+            )}
             {(scanResult || applyResult || validationResult) &&
               !pipelineRunning && (
                 <button
@@ -397,6 +422,13 @@ export default function Dashboard() {
                 <Clock className="h-4 w-4" />
                 Agent Activity
               </h3>
+              {runningStep && (
+                <PipelineTimer
+                  startedAt={stepStartedAt}
+                  estimatedSeconds={STEP_ESTIMATE_SECONDS[runningStep]}
+                  stepLabel={STEPS.find((s) => s.key === runningStep)?.label ?? runningStep}
+                />
+              )}
               <div className="flex-1 rounded-2xl border border-white/[0.06] bg-surface-50 p-6">
                 {activityLog.length === 0 ? (
                   <div className="flex h-full flex-col items-center justify-center py-20 text-gray-700">

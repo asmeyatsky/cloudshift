@@ -50,10 +50,15 @@ export function useApply() {
       }
       const jobId = "job_id" in res.data ? res.data.job_id : "";
       const pollMs = 2000;
-      const maxAttempts = 1e6; // No timeout: apply may touch many files
+      const maxAttempts = 600; // 20 min cap
       let attempts = 0;
       return new Promise<void>((resolve, reject) => {
         const poll = async () => {
+          if (useOperationStore.getState().pipelineAborted) {
+            setRunning(false);
+            reject(new Error("Cancelled"));
+            return;
+          }
           attempts += 1;
           const statusRes = await applyApi.status(jobId);
           if (statusRes.success && statusRes.data) {
@@ -64,9 +69,9 @@ export function useApply() {
           }
           const errMsg = !statusRes.success ? statusRes.error : undefined;
           if (attempts >= maxAttempts) {
-            setError(errMsg ?? "Apply timed out");
+            setError("Apply is taking longer than expected (20 min). Try Cancel and check server.");
             setRunning(false);
-            reject(new Error(errMsg ?? "Apply timed out"));
+            reject(new Error("Apply timed out (20 min)"));
             return;
           }
           if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {
