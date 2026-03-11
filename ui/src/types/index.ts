@@ -169,6 +169,8 @@ export interface ScanResult {
 
 export interface PlanResult {
   id: string;
+  /** Job ID from POST /plan (use for GET /plan/{job_id} e.g. diffs). */
+  jobId?: string;
   manifestId: string;
   transformations: Transformation[];
   diffs: FileDiff[];

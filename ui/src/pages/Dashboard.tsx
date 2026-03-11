@@ -25,12 +25,9 @@ import {
   useValidationStore,
 } from "../store";
 import { useScan } from "../hooks/useScan";
-import {
-  SEED_PLAN_RESULT,
-  SEED_APPLY_RESULT,
-  SEED_DIFFS,
-  SEED_VALIDATION,
-} from "../seed";
+import { usePlan } from "../hooks/usePlan";
+import { useApply } from "../hooks/useApply";
+import { useValidation } from "../hooks/useValidation";
 
 type PipelineStep = "scan" | "plan" | "apply" | "validate";
 
@@ -81,6 +78,9 @@ export default function Dashboard() {
   const setValidationResult = useValidationStore((s) => s.setResult);
 
   const { startScan } = useScan();
+  const { createPlan, planResult: currentPlanResult } = usePlan();
+  const { startApply } = useApply();
+  const { runValidation } = useValidation();
 
   const [activityLog, setActivityLog] = useState<LogEntry[]>([]);
   const [runningStep, setRunningStep] = useState<PipelineStep | null>(null);
@@ -128,48 +128,59 @@ export default function Dashboard() {
 
     // ── Plan ──
     setRunningStep("plan");
-    await wait(500);
-    addLog("Agent generating transformation plan...", "agent");
-    await wait(900);
-    addLog("Pattern engine matched 12 deterministic rules", "info");
-    await wait(800);
-    addLog("LLM confidence assessment: EventBridge rule mapping scored 0.78 (below threshold)", "warning");
-    await wait(700);
-    setPlanResult(SEED_PLAN_RESULT);
-    setDiffs(SEED_DIFFS);
-    addLog(`Plan ready: ${SEED_PLAN_RESULT.estimatedChanges} changes queued, risk level: ${SEED_PLAN_RESULT.riskLevel}`, "success");
+    addLog("Generating transformation plan...", "agent");
+    try {
+      await createPlan();
+    } catch (e: any) {
+      addLog(`Plan failed: ${e.message || e}`, "warning");
+      setPipelineRunning(false);
+      setRunningStep(null);
+      return;
+    }
     if (abortRef.current) { setPipelineRunning(false); setRunningStep(null); return; }
+    const planAfter = useOperationStore.getState().planResult;
+    if (planAfter) {
+      addLog(`Plan ready: ${planAfter.estimatedChanges} changes queued`, "success");
+    }
 
     // ── Apply ──
     setRunningStep("apply");
-    await wait(500);
-    addLog("Agent applying transformations...", "agent");
-    await wait(600);
-    addLog("Applying transformation 6/14: DynamoDB → Firestore", "info");
-    await wait(500);
-    addLog("Applying transformation 10/14: Lambda → Cloud Functions", "info");
-    await wait(500);
-    addLog("Applying transformation 14/14: aws_vpc → google_compute_network", "info");
-    await wait(600);
-    setApplyResult(SEED_APPLY_RESULT);
-    addLog(`Applied: ${SEED_APPLY_RESULT.filesModified} files modified in ${(SEED_APPLY_RESULT.duration / 1000).toFixed(1)}s`, "success");
+    addLog("Applying transformations...", "agent");
+    try {
+      await startApply();
+    } catch (e: any) {
+      addLog(`Apply failed: ${e.message || e}`, "warning");
+      setPipelineRunning(false);
+      setRunningStep(null);
+      return;
+    }
     if (abortRef.current) { setPipelineRunning(false); setRunningStep(null); return; }
+    const applyAfter = useOperationStore.getState().applyResult;
+    if (applyAfter) {
+      addLog(`Applied: ${applyAfter.filesModified} files modified`, "success");
+    }
 
     // ── Validate ──
     setRunningStep("validate");
-    await wait(500);
-    addLog("Agent running validation checks...", "agent");
-    await wait(700);
-    addLog("Running AST equivalence checks...", "agent");
-    await wait(600);
-    addLog("Running residual import scan...", "agent");
-    await wait(800);
-    setValidationResult(SEED_VALIDATION);
-    addLog(`All validation checks complete. ${SEED_VALIDATION.summary.totalIssues} issues found.`, "warning");
+    addLog("Running validation checks...", "agent");
+    const planIdForValidate = useOperationStore.getState().planResult?.id;
+    if (planIdForValidate) {
+      try {
+        await runValidation(planIdForValidate);
+        const valAfter = useValidationStore.getState().result;
+        if (valAfter) {
+          addLog(`Validation complete. Passed: ${valAfter.passed}. Issues: ${valAfter.summary.totalIssues}`, valAfter.passed ? "success" : "warning");
+        }
+      } catch (e: any) {
+        addLog(`Validation failed: ${e.message || e}`, "warning");
+      }
+    } else {
+      addLog("No plan ID available for validation", "warning");
+    }
 
     setRunningStep(null);
     setPipelineRunning(false);
-  }, [activeProject, pipelineRunning, addLog, setScanResult, setEntries, setPlanResult, setDiffs, setApplyResult, setValidationResult]);
+  }, [activeProject, pipelineRunning, addLog, createPlan, startApply, runValidation]);
 
   const handleReset = useCallback(() => {
     abortRef.current = true;

@@ -1,14 +1,16 @@
-"""Tests for project routes: POST /api/projects/from-snippet."""
+"""Tests for project routes: POST /api/projects/from-snippet, POST /api/projects/from-git."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from cloudshift.presentation.api.app import create_app
 from cloudshift.presentation.api.dependencies import verify_auth
+from cloudshift.presentation.api.routes import projects as projects_router
 
 
 @pytest.fixture
@@ -122,3 +124,47 @@ class TestFromSnippet:
         assert root.exists()
         assert (root / "main.py").exists()
         assert (root / "main.py").read_text() == "x = 1"
+
+
+class TestFromGit:
+    def test_from_git_rejects_non_https(self, client):
+        resp = client.post(
+            "/api/projects/from-git",
+            json={
+                "repo_url": "git@github.com:foo/bar.git",
+                "branch": "main",
+                "name": "bar",
+                "source_provider": "AWS",
+                "target_provider": "GCP",
+            },
+        )
+        assert resp.status_code == 400
+        assert "HTTPS" in resp.json().get("detail", "")
+
+    def test_from_git_clones_and_returns(self, client, tmp_path):
+        base = tmp_path / "git_import"
+        base.mkdir()
+        with patch.object(projects_router, "GIT_IMPORT_BASE", base), patch(
+            "cloudshift.presentation.api.routes.projects.subprocess.run"
+        ) as mock_run:
+            mock_run.return_value = type("R", (), {"returncode": 0})()
+            resp = client.post(
+                "/api/projects/from-git",
+                json={
+                    "repo_url": "https://github.com/example/repo.git",
+                    "branch": "main",
+                    "name": "my-repo",
+                    "source_provider": "AWS",
+                    "target_provider": "GCP",
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "my-repo"
+        assert "project_id" in data
+        assert "root_path" in data
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "clone" in call_args
+        assert "main" in call_args
+        assert "https://github.com/example/repo.git" in call_args

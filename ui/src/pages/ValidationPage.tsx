@@ -3,15 +3,20 @@ import ValidationDashboard from "../components/validation/ValidationDashboard";
 import IssueList from "../components/validation/IssueList";
 import FixOverlay from "../components/validation/FixOverlay";
 import { useValidation } from "../hooks/useValidation";
-import { useValidationStore } from "../store";
+import { useOperationStore, useValidationStore } from "../store";
 import { SEED_FIX_DATA } from "../seed";
 import type { ValidationIssue } from "../types";
 
 export default function ValidationPage() {
   const { runValidation, fetchLatest, result, loading, error } =
     useValidation();
+  const planResult = useOperationStore((s) => s.planResult);
   const [fixIssue, setFixIssue] = useState<ValidationIssue | null>(null);
   const resolveIssue = useValidationStore((s) => s.resolveIssue);
+
+  const handleRunValidation = () => {
+    if (planResult?.id) runValidation(planResult.id);
+  };
 
   useEffect(() => {
     if (!result) {
@@ -40,7 +45,8 @@ export default function ValidationPage() {
         <ValidationDashboard
           result={result}
           loading={loading}
-          onRunValidation={runValidation}
+          onRunValidation={handleRunValidation}
+          hasPlanId={!!planResult?.id}
         />
 
         {result && result.issues.length > 0 && (

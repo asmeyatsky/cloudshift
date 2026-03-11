@@ -6,7 +6,13 @@ import hashlib
 from pathlib import Path
 from typing import Protocol
 
-from cloudshift.application.dtos.transform import DiffResult, HunkDTO, TransformRequest, TransformResult
+from cloudshift.application.dtos.transform import (
+    DiffResult,
+    HunkDTO,
+    ModifiedFileDetail,
+    TransformRequest,
+    TransformResult,
+)
 from cloudshift.domain.value_objects.types import Language
 
 
@@ -140,6 +146,7 @@ class ApplyTransformationUseCase:
         diffs: list[DiffResult] = []
         errors: list[str] = []
         modified_files: set[str] = set()
+        modified_file_details: list[ModifiedFileDetail] = []
 
         for step in ordered:
             unsatisfied = [d for d in step.depends_on if d not in completed]
@@ -148,10 +155,12 @@ class ApplyTransformationUseCase:
                 continue
 
             try:
-                diff = await self._apply_step(step, request.dry_run, request.backup)
+                diff, detail = await self._apply_step(step, request.dry_run, request.backup)
                 if diff is not None:
                     diffs.append(diff)
                     modified_files.add(step.file_path)
+                    if detail is not None:
+                        modified_file_details.append(detail)
                 applied.append(step.step_id)
                 completed.add(step.step_id)
             except Exception as exc:
@@ -166,13 +175,14 @@ class ApplyTransformationUseCase:
             files_modified=len(modified_files),
             success=len(errors) == 0,
             errors=errors,
+            modified_file_details=modified_file_details,
         )
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
-    async def _apply_step(self, step: PlanStep, dry_run: bool, backup: bool) -> DiffResult | None:
+    async def _apply_step(self, step: PlanStep, dry_run: bool, backup: bool) -> tuple[DiffResult | None, ModifiedFileDetail | None]:
         original = await self._fs.read_file(step.file_path)
         modified = await self._pattern_engine.apply_pattern(step.pattern_id, original)
 
@@ -181,7 +191,7 @@ class ApplyTransformationUseCase:
             modified = await self._imports.organize(modified, step.language)
 
         if original == modified:
-            return None
+            return None, None
 
         hunks_raw = await self._diff_engine.compute_diff(original, modified, step.file_path)
         hunks = [
@@ -200,11 +210,21 @@ class ApplyTransformationUseCase:
                 await self._fs.copy_file(step.file_path, step.file_path + ".bak")
             await self._fs.write_file(step.file_path, modified)
 
-        return DiffResult(
-            file_path=step.file_path,
-            original_hash=hashlib.sha256(original.encode()).hexdigest()[:16],
-            modified_hash=hashlib.sha256(modified.encode()).hexdigest()[:16],
-            hunks=hunks,
+        lang_name = getattr(step.language, "name", "python") if step.language else "python"
+        detail = ModifiedFileDetail(
+            path=step.file_path,
+            original_content=original,
+            modified_content=modified,
+            language=lang_name.lower(),
+        )
+        return (
+            DiffResult(
+                file_path=step.file_path,
+                original_hash=hashlib.sha256(original.encode()).hexdigest()[:16],
+                modified_hash=hashlib.sha256(modified.encode()).hexdigest()[:16],
+                hunks=hunks,
+            ),
+            detail,
         )
 
     @staticmethod

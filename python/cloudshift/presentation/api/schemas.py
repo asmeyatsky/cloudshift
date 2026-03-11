@@ -58,6 +58,7 @@ class ScanRequestBody(BaseModel):
     target_provider: CloudProviderParam
     languages: list[LanguageParam] = Field(default_factory=list)
     exclude_patterns: list[str] = Field(default_factory=list)
+    project_id: str | None = Field(default=None, description="If set, scan result is stored for plan (manifest_id = project_id).")
 
     @model_validator(mode='before')
     @classmethod

@@ -113,3 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return Response(status_code=204)
 
     return app
+
+
+# ASGI entry point for uvicorn: cloudshift.presentation.api.app:app
+app = create_app()

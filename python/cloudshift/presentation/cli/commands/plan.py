@@ -14,6 +14,7 @@ from rich.text import Text
 from cloudshift.application.dtos.plan import PlanRequest
 from cloudshift.application.use_cases import GeneratePlanUseCase
 from cloudshift.infrastructure.config.dependency_injection import Container
+from cloudshift.presentation.api.plan_store import register_plan
 from cloudshift.presentation.cli.formatters import error_panel
 
 app = typer.Typer(name="plan", help="Generate a migration plan.")
@@ -46,6 +47,8 @@ def plan(
     if result.error:
         console.print(error_panel("Plan Failed", result.error))
         raise typer.Exit(code=2)
+
+    register_plan(result.plan_id, result.model_dump())
 
     if json_output:
         console.print_json(result.model_dump_json())

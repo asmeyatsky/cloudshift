@@ -83,11 +83,17 @@ function put<T>(path: string, body: unknown): Promise<ApiResult<T>> {
 /* ------------------------------------------------------------------ */
 
 export const scanApi = {
-  start: (rootPath: string, sourceProvider: string, targetProvider: string) =>
+  start: (
+    rootPath: string,
+    sourceProvider: string,
+    targetProvider: string,
+    projectId?: string,
+  ) =>
     post<JobAccepted>("/scan", {
       root_path: rootPath,
       source_provider: sourceProvider,
       target_provider: targetProvider,
+      ...(projectId != null && { project_id: projectId }),
     }),
   status: (jobId: string) => get<ScanResult>(`/scan/${jobId}`),
 };
@@ -206,6 +212,14 @@ export const projectApi = {
     target_provider: string;
     filename?: string;
   }) => post<FromSnippetResponse>("/projects/from-snippet", body),
+  /** Clone a Git repo and register for scanning (AWS/Azure → GCP pipeline). */
+  createFromGit: (body: {
+    repo_url: string;
+    branch: string;
+    name: string;
+    source_provider: string;
+    target_provider: string;
+  }) => post<FromSnippetResponse>("/projects/from-git", body),
 };
 
 export const manifestApi = {

@@ -306,7 +306,8 @@ class TestApplyTransformationUseCase:
         ps, pe, fs, de, eb = mocks
 
         step = SimpleNamespace(
-            step_id="s1", file_path="app.py", pattern_id="p1", depends_on=[]
+            step_id="s1", file_path="app.py", pattern_id="p1", depends_on=[],
+            language=Language.PYTHON,
         )
         plan = SimpleNamespace(plan_id="plan1", steps=[step])
         ps.get_plan.return_value = plan
@@ -338,7 +339,8 @@ class TestApplyTransformationUseCase:
         ps, pe, fs, de, eb = mocks
 
         step = SimpleNamespace(
-            step_id="s1", file_path="app.py", pattern_id="p1", depends_on=[]
+            step_id="s1", file_path="app.py", pattern_id="p1", depends_on=[],
+            language=Language.PYTHON,
         )
         plan = SimpleNamespace(plan_id="plan1", steps=[step])
         ps.get_plan.return_value = plan
@@ -369,7 +371,8 @@ class TestApplyTransformationUseCase:
         ps, pe, fs, de, eb = mocks
 
         step = SimpleNamespace(
-            step_id="s1", file_path="app.py", pattern_id="p1", depends_on=[]
+            step_id="s1", file_path="app.py", pattern_id="p1", depends_on=[],
+            language=Language.PYTHON,
         )
         plan = SimpleNamespace(plan_id="plan1", steps=[step])
         ps.get_plan.return_value = plan

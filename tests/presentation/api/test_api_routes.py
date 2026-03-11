@@ -630,12 +630,13 @@ class TestDependencies:
         from cloudshift.application.use_cases.generate_plan import GeneratePlanUseCase
 
         custom_container = SimpleNamespace(
+            pattern_store=MagicMock(),
+            walker=MagicMock(),
             pattern_engine=AsyncMock(),
-            diff=AsyncMock(),
+            project_repository=AsyncMock(),
         )
-        # The dependency function passes diff= which is wrong, so we test it raises.
-        with pytest.raises(TypeError):
-            get_plan_use_case(custom_container)
+        uc = get_plan_use_case(custom_container)
+        assert uc is not None
 
     def test_get_apply_use_case(self, container):
         """Cover get_apply_use_case: constructor expects plan_store, diff_engine, etc."""
@@ -723,7 +724,7 @@ class TestBackgroundRunners:
         use_case.execute.return_value = mock_result
 
         with patch.object(manager, "broadcast", new_callable=AsyncMock) as mock_broadcast:
-            await _run_scan("job1", use_case, MagicMock())
+            await _run_scan("job1", use_case, MagicMock(), None, MagicMock())
             assert "job1" in _results
             assert _results["job1"]["project_id"] == "p1"
             # Two broadcasts: started + completed.
@@ -737,7 +738,7 @@ class TestBackgroundRunners:
         use_case.execute.side_effect = RuntimeError("scan boom")
 
         with patch.object(manager, "broadcast", new_callable=AsyncMock):
-            await _run_scan("job_fail", use_case, MagicMock())
+            await _run_scan("job_fail", use_case, MagicMock(), None, MagicMock())
             assert "job_fail" in _results
             assert "error" in _results["job_fail"]
             assert "scan boom" in _results["job_fail"]["error"]
@@ -787,7 +788,7 @@ class TestBackgroundRunners:
         use_case.execute.return_value = mock_result
 
         with patch.object(manager, "broadcast", new_callable=AsyncMock):
-            await _run_apply("applyok", use_case, MagicMock())
+            await _run_apply("applyok", use_case, MagicMock(), MagicMock())
             assert "applyok" in _results
             _results.pop("applyok", None)
 
@@ -798,8 +799,8 @@ class TestBackgroundRunners:
         use_case.execute.side_effect = RuntimeError("apply boom")
 
         with patch.object(manager, "broadcast", new_callable=AsyncMock):
-            await _run_apply("applyfail", use_case, MagicMock())
-            assert "error" in _results["applyfail"]
+            await _run_apply("applyfail", use_case, MagicMock(), MagicMock())
+            assert "errors" in _results["applyfail"] or "error" in _results["applyfail"]
             _results.pop("applyfail", None)
 
     async def test_run_validate_success(self):

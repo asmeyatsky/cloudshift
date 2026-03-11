@@ -15,6 +15,7 @@ from cloudshift.presentation.api.schemas import (
     PlanRequestBody,
     PlanResultResponse,
 )
+from cloudshift.presentation.api.plan_store import register_plan
 from cloudshift.presentation.api.websocket import manager
 
 router = APIRouter(prefix="/api/plan", tags=["plan"])
@@ -26,11 +27,23 @@ async def _run_plan(job_id: str, use_case: GeneratePlanUseCase, dto: PlanRequest
     await manager.broadcast({"job_id": job_id, "type": "plan", "status": "started"})
     try:
         result = await use_case.execute(dto)
-        _results[job_id] = result.model_dump(mode="json")
+        dumped = result.model_dump(mode="json")
+        _results[job_id] = dumped
+        if not result.error and result.plan_id:
+            register_plan(result.plan_id, dumped)
         await manager.broadcast({"job_id": job_id, "type": "plan", "status": "completed"})
     except Exception as exc:
-        _results[job_id] = {"error": str(exc)}
-        await manager.broadcast({"job_id": job_id, "type": "plan", "status": "failed", "error": str(exc)})
+        err_msg = str(exc)
+        _results[job_id] = {
+            "plan_id": "",
+            "project_id": dto.project_id,
+            "steps": [],
+            "estimated_files_changed": 0,
+            "estimated_confidence": 0.0,
+            "warnings": [],
+            "error": err_msg,
+        }
+        await manager.broadcast({"job_id": job_id, "type": "plan", "status": "failed", "error": err_msg})
 
 
 @router.post(

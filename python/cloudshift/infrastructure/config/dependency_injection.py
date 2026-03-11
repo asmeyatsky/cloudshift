@@ -7,7 +7,12 @@ in ``cloudshift.domain.ports``.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cloudshift.infrastructure.config.settings import Settings
+
+# Git-imported repos live here; must be allowed for scan (macOS: /tmp -> /private/tmp).
+GIT_IMPORT_BASE = Path("/tmp/cloudshift")
 
 # -- Concrete adapter imports (only place these appear) ---------------------
 from cloudshift.infrastructure.file_system.local_fs import LocalFileSystem
@@ -185,23 +190,44 @@ class Container:
             ValidateTransformationUseCase,
         )
 
+        # Ensure git-import base is always allowed (scan resolves paths; on macOS /tmp -> /private/tmp).
+        _scan_paths = list(self._settings.allowed_scan_paths)
+        if GIT_IMPORT_BASE not in _scan_paths:
+            _scan_paths.append(GIT_IMPORT_BASE)
+        from cloudshift.presentation.api.scan_adapters import (
+            AsyncScanDetector,
+            AsyncScanFs,
+            AsyncScanParser,
+        )
+        from cloudshift.presentation.api.plan_adapters import (
+            PlanPatternEngineAdapter,
+            PlanStoreAdapter,
+        )
+        from cloudshift.presentation.api.apply_adapters import (
+            AsyncApplyFs,
+            AsyncDiffEngineAdapter,
+        )
         factories = {
             ScanProjectUseCase: lambda: ScanProjectUseCase(
-                fs=self.file_system,
-                parser=self.parser,
-                detector=self.detector,
-                allowed_paths=self._settings.allowed_scan_paths,
+                fs=AsyncScanFs(self.walker),
+                parser=AsyncScanParser(self.parser),
+                detector=AsyncScanDetector(self.detector),
+                allowed_paths=_scan_paths,
                 min_confidence=self._settings.min_confidence_score,
             ),
             GeneratePlanUseCase: lambda: GeneratePlanUseCase(
-                pattern_engine=self.pattern_engine,
+                pattern_engine=PlanPatternEngineAdapter(
+                    pattern_store=self.pattern_store,
+                    walker=self.walker,
+                    pattern_engine=self.pattern_engine,
+                ),
                 manifest_store=self.project_repository,
             ),
             ApplyTransformationUseCase: lambda: ApplyTransformationUseCase(
-                plan_store=self.project_repository,
+                plan_store=PlanStoreAdapter(),
                 pattern_engine=self.pattern_engine,
-                fs=self.file_system,
-                diff_engine=self.diff,
+                fs=AsyncApplyFs(self.file_system),
+                diff_engine=AsyncDiffEngineAdapter(self.diff),
                 git=self.git_safety,
                 imports=self.import_organizer,
             ),

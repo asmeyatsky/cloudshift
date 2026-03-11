@@ -31,8 +31,18 @@ async def _run_validate(
         _results[job_id] = result.model_dump(mode="json")
         await manager.broadcast({"job_id": job_id, "type": "validate", "status": "completed"})
     except Exception as exc:
-        _results[job_id] = {"error": str(exc)}
-        await manager.broadcast({"job_id": job_id, "type": "validate", "status": "failed", "error": str(exc)})
+        err_msg = str(exc)
+        _results[job_id] = {
+            "plan_id": dto.plan_id,
+            "passed": False,
+            "issues": [],
+            "ast_equivalent": None,
+            "residual_refs_found": 0,
+            "sdk_coverage": 0.0,
+            "tests_passed": None,
+            "error": err_msg,
+        }
+        await manager.broadcast({"job_id": job_id, "type": "validate", "status": "failed", "error": err_msg})
 
 
 @router.post(

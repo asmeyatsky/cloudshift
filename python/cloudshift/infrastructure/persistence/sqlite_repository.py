@@ -6,6 +6,7 @@ import json
 import sqlite3
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 from cloudshift.domain.entities.project import Project
 from cloudshift.domain.value_objects.types import CloudProvider, ProjectStatus
@@ -34,6 +35,26 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 """
 
+_CREATE_SCAN_MANIFESTS_TABLE = """
+CREATE TABLE IF NOT EXISTS scan_manifests (
+    id          TEXT PRIMARY KEY,
+    root_path   TEXT NOT NULL,
+    source_prov TEXT NOT NULL,
+    target_prov TEXT NOT NULL,
+    entries_json TEXT NOT NULL DEFAULT '[]'
+);
+"""
+
+_CREATE_TRANSFORM_METADATA_TABLE = """
+CREATE TABLE IF NOT EXISTS transform_metadata (
+    plan_id     TEXT PRIMARY KEY,
+    root_path   TEXT NOT NULL,
+    source_prov TEXT NOT NULL,
+    target_prov TEXT NOT NULL,
+    modified_files_json TEXT NOT NULL DEFAULT '[]'
+);
+"""
+
 
 class SQLiteProjectRepository:
     """Implements ProjectRepositoryPort backed by a local SQLite database.
@@ -52,6 +73,8 @@ class SQLiteProjectRepository:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL;")
         self._conn.execute(_CREATE_TABLE)
+        self._conn.execute(_CREATE_SCAN_MANIFESTS_TABLE)
+        self._conn.execute(_CREATE_TRANSFORM_METADATA_TABLE)
         self._conn.commit()
 
     def save(self, project: Project) -> str:
@@ -103,6 +126,82 @@ class SQLiteProjectRepository:
             (status, project_id),
         )
         self._conn.commit()
+
+    def save_scan_manifest(self, manifest_id: str, root_path: str, source_provider: str, target_provider: str, files: list[dict]) -> None:
+        """Store scan result for plan use case (manifest_id = project_id from UI)."""
+        entries_json = json.dumps([{"path": f.get("path"), "services_detected": f.get("services_detected", [])} for f in files])
+        self._conn.execute(
+            "INSERT OR REPLACE INTO scan_manifests (id, root_path, source_prov, target_prov, entries_json) VALUES (?, ?, ?, ?, ?)",
+            (manifest_id, root_path, source_provider, target_provider, entries_json),
+        )
+        self._conn.commit()
+
+    def _get_manifest_sync(self, manifest_id: str) -> SimpleNamespace | None:
+        row = self._conn.execute(
+            "SELECT id, root_path, source_prov, target_prov, entries_json FROM scan_manifests WHERE id = ?",
+            (manifest_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        entries = []
+        for e in json.loads(row["entries_json"]):
+            entries.append(SimpleNamespace(file_path=e.get("path", ""), services=e.get("services_detected", [])))
+        return SimpleNamespace(
+            root_path=row["root_path"],
+            source_provider=row["source_prov"],
+            target_provider=row["target_prov"],
+            entries=entries,
+        )
+
+    async def get_manifest(self, manifest_id: str) -> SimpleNamespace | None:
+        """Return manifest for plan use case. Run in caller thread (SQLite is thread-local)."""
+        return self._get_manifest_sync(manifest_id)
+
+    def save_transform_metadata(
+        self,
+        plan_id: str,
+        root_path: str,
+        source_provider: str,
+        target_provider: str,
+        modified_files: list[dict],
+    ) -> None:
+        """Persist transform metadata for validate use case. Call from same thread as connection."""
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO transform_metadata (plan_id, root_path, source_prov, target_prov, modified_files_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (plan_id, root_path, source_provider, target_provider, json.dumps(modified_files)),
+        )
+        self._conn.commit()
+
+    def _get_transform_metadata_sync(self, plan_id: str) -> SimpleNamespace | None:
+        row = self._conn.execute(
+            "SELECT plan_id, root_path, source_prov, target_prov, modified_files_json FROM transform_metadata WHERE plan_id = ?",
+            (plan_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        files = []
+        for f in json.loads(row["modified_files_json"]):
+            files.append(
+                SimpleNamespace(
+                    path=f.get("path", ""),
+                    original_content=f.get("original_content", ""),
+                    modified_content=f.get("modified_content", ""),
+                    language=f.get("language", "python"),
+                )
+            )
+        return SimpleNamespace(
+            root_path=row["root_path"],
+            source_provider=row["source_prov"],
+            target_provider=row["target_prov"],
+            modified_files=files,
+        )
+
+    async def get_transform_metadata(self, plan_id: str) -> SimpleNamespace | None:
+        """Return transform metadata for validate use case. Run in caller thread (SQLite is thread-local)."""
+        return self._get_transform_metadata_sync(plan_id)
 
     def close(self) -> None:
         self._conn.close()

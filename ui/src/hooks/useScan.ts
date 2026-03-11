@@ -19,15 +19,24 @@ export function useScan() {
     setScanResult(null);
 
     try {
-      const res = await scanApi.start(activeProject.path, activeProject.sourceProvider, activeProject.targetProvider);
+      const res = await scanApi.start(
+        activeProject.path,
+        activeProject.sourceProvider,
+        activeProject.targetProvider,
+        activeProject.id,
+      );
       
       if (!res.success) {
         throw new Error(res.error ?? "Scan failed to start");
       }
 
       return new Promise<void>((resolve, reject) => {
+        const pollMs = 1500;
+        const maxAttempts = 120; // 3 min
+        let attempts = 0;
         const check = async () => {
           try {
+            attempts += 1;
             const statusRes = await scanApi.status(res.data.job_id);
             if (statusRes.success) {
               const data = statusRes.data as { error?: string; files?: { path?: string; services_detected?: string[]; confidence?: number }[]; source_provider?: string; target_provider?: string };
@@ -35,7 +44,6 @@ export function useScan() {
                 throw new Error(data.error);
               }
               setScanResult(statusRes.data);
-              // Map backend files to ManifestEntry[]
               const entries: ManifestEntry[] = (data.files || []).map((f, idx) => ({
                   id: `e-${idx}`,
                   filePath: f.path ?? "",
@@ -53,8 +61,9 @@ export function useScan() {
               setRunning(false);
               resolve();
             } else {
-              if (statusRes.error && statusRes.error.includes("progress")) {
-                setTimeout(check, 1000);
+              if (attempts >= maxAttempts) throw new Error(statusRes.error ?? "Scan timed out");
+              if (statusRes.error?.toLowerCase().includes("not found") || statusRes.error?.toLowerCase().includes("in progress")) {
+                setTimeout(check, pollMs);
               } else {
                 throw new Error(statusRes.error ?? "Scan failed");
               }

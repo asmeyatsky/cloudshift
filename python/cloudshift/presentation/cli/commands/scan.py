@@ -50,6 +50,15 @@ def scan(
         console.print(error_panel("Scan Failed", result.error))
         raise typer.Exit(code=2)
 
+    repo = container.project_repository
+    repo.save_scan_manifest(
+        result.project_id,
+        result.root_path,
+        result.source_provider.name if hasattr(result.source_provider, "name") else str(result.source_provider),
+        result.target_provider.name if hasattr(result.target_provider, "name") else str(result.target_provider),
+        [{"path": f.path, "services_detected": f.services_detected} for f in result.files],
+    )
+
     if json_output:
         console.print_json(result.model_dump_json())
     else:

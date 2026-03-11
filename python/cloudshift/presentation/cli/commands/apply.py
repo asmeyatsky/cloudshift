@@ -11,6 +11,7 @@ from rich.console import Console
 from cloudshift.application.dtos.transform import TransformRequest
 from cloudshift.application.use_cases import ApplyTransformationUseCase
 from cloudshift.infrastructure.config.dependency_injection import Container
+from cloudshift.presentation.api.plan_store import get_plan
 from cloudshift.presentation.cli.formatters import diff_panel, error_panel
 
 app = typer.Typer(name="apply", help="Apply migration transformations.")
@@ -41,6 +42,18 @@ def apply(
     with console.status(f"[bold green]{label}"):
         result = asyncio.run(use_case.execute(request))
 
+    if result.success and getattr(result, "modified_file_details", None):
+        plan = asyncio.run(get_plan(plan_id))
+        if plan and getattr(plan, "project_id", None):
+            manifest = asyncio.run(container.project_repository.get_manifest(plan.project_id))
+            if manifest:
+                container.project_repository.save_transform_metadata(
+                    plan_id,
+                    getattr(manifest, "root_path", ""),
+                    getattr(manifest, "source_provider", "aws"),
+                    getattr(manifest, "target_provider", "gcp"),
+                    [f.model_dump() for f in result.modified_file_details],
+                )
     if not result.success:
         console.print(error_panel("Apply Failed", "\n".join(result.errors)))
         raise typer.Exit(code=2)

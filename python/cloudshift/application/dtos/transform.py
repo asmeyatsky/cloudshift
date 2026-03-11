@@ -38,6 +38,15 @@ class TransformRequest(BaseModel):
     check_git_clean: bool = Field(default=True, description="Ensure git repository is clean before applying.")
 
 
+class ModifiedFileDetail(BaseModel):
+    """One file's original and modified content for validation."""
+
+    path: str
+    original_content: str
+    modified_content: str
+    language: str = "python"
+
+
 class TransformResult(BaseModel):
     """Output of the apply-transformation use case."""
 
@@ -47,3 +56,7 @@ class TransformResult(BaseModel):
     files_modified: int = 0
     success: bool = True
     errors: list[str] = Field(default_factory=list)
+    modified_file_details: list[ModifiedFileDetail] = Field(
+        default_factory=list,
+        description="Per-file original/modified content for validation metadata.",
+    )

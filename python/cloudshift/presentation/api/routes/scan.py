@@ -29,11 +29,28 @@ router = APIRouter(prefix="/api/scan", tags=["scan"])
 _results: dict[str, Any] = {}
 
 
-async def _run_scan(job_id: str, use_case: ScanProjectUseCase, dto: ScanRequest) -> None:
+async def _run_scan(
+    job_id: str,
+    use_case: ScanProjectUseCase,
+    dto: ScanRequest,
+    project_id: str | None,
+    container: Any,
+) -> None:
     await manager.broadcast({"job_id": job_id, "type": "scan", "status": "started"})
     try:
         result = await use_case.execute(dto)
-        _results[job_id] = result.model_dump(mode="json")
+        dumped = result.model_dump(mode="json")
+        _results[job_id] = dumped
+        if project_id and not result.error:
+            repo = container.project_repository
+            # Call sync DB write in same thread (SQLite connection is thread-local).
+            repo.save_scan_manifest(
+                project_id,
+                result.root_path,
+                result.source_provider.name if hasattr(result.source_provider, "name") else str(result.source_provider),
+                result.target_provider.name if hasattr(result.target_provider, "name") else str(result.target_provider),
+                dumped.get("files", []),
+            )
         await manager.broadcast({"job_id": job_id, "type": "scan", "status": "completed"})
     except Exception as exc:
         err_msg = str(exc)
@@ -105,6 +122,7 @@ async def start_scan(
     body: ScanRequestBody,
     background: BackgroundTasks,
     use_case: ScanProjectUseCase = Depends(get_scan_use_case),
+    container: Any = Depends(get_container),
 ) -> JobAccepted:
     job_id = uuid.uuid4().hex[:12]
     dto = ScanRequest(
@@ -114,7 +132,7 @@ async def start_scan(
         languages=[Language[l.value] for l in body.languages],
         exclude_patterns=body.exclude_patterns,
     )
-    background.add_task(_run_scan, job_id, use_case, dto)
+    background.add_task(_run_scan, job_id, use_case, dto, body.project_id, container)
     return JobAccepted(job_id=job_id)
 
 

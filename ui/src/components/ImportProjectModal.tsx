@@ -128,27 +128,78 @@ export default function ImportProjectModal({ open, onClose }: Props) {
       return;
     }
 
-    const inputPath = mode === "git" ? repoUrl : localPath;
-    if (!inputPath.trim()) {
-      setError(mode === "git" ? "Enter a repository URL" : "Enter a file path");
-      return;
-    }
-    if (!projectName.trim()) {
-      setError("Enter a project name");
-      return;
-    }
-    if (source === target) {
-      setError("Source and target providers must be different");
+    if (mode === "git") {
+      if (!repoUrl.trim()) {
+        setError("Enter a repository URL");
+        return;
+      }
+      if (!projectName.trim()) {
+        setError("Enter a project name");
+        return;
+      }
+      setImporting(true);
+      const res = await projectApi.createFromGit({
+        repo_url: repoUrl.trim(),
+        branch: branch.trim() || "main",
+        name: projectName.trim(),
+        source_provider: source.toUpperCase(),
+        target_provider: target.toUpperCase(),
+      });
+      setImporting(false);
+      if (!res.success) {
+        setError(res.error ?? "Failed to clone repository");
+        return;
+      }
+      const newProject = {
+        id: res.data.project_id,
+        name: res.data.name,
+        path: res.data.root_path,
+        sourceProvider: source,
+        targetProvider: target,
+        config: {
+          excludePaths: ["node_modules/**", ".git/**", "dist/**", "__pycache__/**"],
+          includePatterns: ["**/*.py", "**/*.ts", "**/*.js", "**/*.tf", "**/*.yaml", "**/*.json"],
+          autoValidate: true,
+          dryRun: false,
+          maxConcurrency: 4,
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      resetOps();
+      setValidationResult(null);
+      setEntries([]);
+      setProjects([...projects, newProject]);
+      setActiveProject(newProject);
+      onClose();
+      setRepoUrl("");
+      setProjectName("");
+      setBranch("main");
       return;
     }
 
+    if (mode === "local") {
+      if (!localPath.trim()) {
+        setError("Enter a file path");
+        return;
+      }
+      if (!projectName.trim()) {
+        setError("Enter a project name");
+        return;
+      }
+      if (source === target) {
+        setError("Source and target providers must be different");
+        return;
+      }
+    }
+
     setImporting(true);
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 500));
 
     const newProject = {
       id: `proj-${Date.now().toString(36)}`,
       name: projectName.trim(),
-      path: mode === "git" ? `/tmp/cloudshift/${projectName.trim()}` : localPath.trim(),
+      path: localPath.trim(),
       sourceProvider: source,
       targetProvider: target,
       config: {
@@ -169,10 +220,8 @@ export default function ImportProjectModal({ open, onClose }: Props) {
     setActiveProject(newProject);
     setImporting(false);
     onClose();
-    setRepoUrl("");
     setLocalPath("");
     setProjectName("");
-    setBranch("main");
   };
 
   if (!open) return null;

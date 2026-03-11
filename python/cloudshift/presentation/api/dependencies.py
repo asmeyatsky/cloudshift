@@ -92,31 +92,55 @@ async def verify_auth(request: Request):
 
 
 def get_scan_use_case(container: Any = Depends(get_container)):
+    from pathlib import Path
+
     from cloudshift.application.use_cases.scan_project import ScanProjectUseCase
+    from cloudshift.infrastructure.config.dependency_injection import GIT_IMPORT_BASE
+    from cloudshift.presentation.api.scan_adapters import (
+        AsyncScanDetector,
+        AsyncScanFs,
+        AsyncScanParser,
+    )
+
+    settings = getattr(container, "_settings", None)
+    allowed = list(getattr(settings, "allowed_scan_paths", [Path(".")])) if settings else [Path(".")]
+    if GIT_IMPORT_BASE not in allowed:
+        allowed.append(GIT_IMPORT_BASE)
 
     return ScanProjectUseCase(
-        fs=container.walker,
-        parser=container.parser,
-        detector=container.detector,
+        fs=AsyncScanFs(container.walker),
+        parser=AsyncScanParser(container.parser),
+        detector=AsyncScanDetector(container.detector),
+        allowed_paths=allowed,
     )
 
 
 def get_plan_use_case(container: Any = Depends(get_container)):
     from cloudshift.application.use_cases.generate_plan import GeneratePlanUseCase
+    from cloudshift.presentation.api.plan_adapters import PlanPatternEngineAdapter
 
     return GeneratePlanUseCase(
-        pattern_engine=container.pattern_engine,
-        diff=container.diff,
+        pattern_engine=PlanPatternEngineAdapter(
+            pattern_store=container.pattern_store,
+            walker=container.walker,
+            pattern_engine=container.pattern_engine,
+        ),
+        manifest_store=container.project_repository,
     )
 
 
 def get_apply_use_case(container: Any = Depends(get_container)):
     from cloudshift.application.use_cases.apply_transformation import ApplyTransformationUseCase
+    from cloudshift.presentation.api.apply_adapters import AsyncApplyFs, AsyncDiffEngineAdapter
+    from cloudshift.presentation.api.plan_adapters import PlanStoreAdapter
 
     return ApplyTransformationUseCase(
+        plan_store=PlanStoreAdapter(),
         pattern_engine=container.pattern_engine,
-        diff=container.diff,
-        fs=container.file_system,
+        fs=AsyncApplyFs(container.file_system),
+        diff_engine=AsyncDiffEngineAdapter(container.diff),
+        git=container.git_safety,
+        imports=container.import_organizer,
     )
 
 
