@@ -47,10 +47,10 @@ const STEPS: {
   icon: typeof Scan;
   desc: string;
 }[] = [
-  { key: "scan", label: "Scan", icon: Scan, desc: "Discover cloud resources" },
-  { key: "plan", label: "Plan", icon: Map, desc: "Generate transformations" },
-  { key: "apply", label: "Apply", icon: Play, desc: "Execute changes" },
-  { key: "validate", label: "Validate", icon: ShieldCheck, desc: "Verify correctness" },
+  { key: "scan", label: "Scan", icon: Scan, desc: "Discover AWS/Azure resources" },
+  { key: "plan", label: "Plan", icon: Map, desc: "Plan refactor to GCP" },
+  { key: "apply", label: "Apply", icon: Play, desc: "Convert code to GCP" },
+  { key: "validate", label: "Validate", icon: ShieldCheck, desc: "Verify GCP output" },
 ];
 
 interface LogEntry {
@@ -222,7 +222,7 @@ export default function Dashboard() {
     if (abortRef.current) { setPipelineRunning(false); setRunningStep(null); return; }
     const applyAfter = useOperationStore.getState().applyResult;
     if (applyAfter) {
-      addLog(`Applied: ${applyAfter.filesModified} files modified`, "success");
+      addLog(`${applyAfter.filesModified} file(s) converted to GCP`, "success");
     }
 
     // ── Validate ──
@@ -292,6 +292,9 @@ export default function Dashboard() {
                   <ArrowRight className="mx-1.5 inline h-4 w-4 text-gray-700" />
                   <span className="font-mono text-sm uppercase text-accent-green/80">
                     {activeProject.targetProvider}
+                  </span>
+                  <span className="ml-2 text-gray-600">
+                    — refactor {activeProject.sourceProvider} code to GCP
                   </span>
                 </>
               ) : (

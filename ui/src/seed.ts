@@ -10,25 +10,44 @@ import type {
 } from "./types";
 
 /* ------------------------------------------------------------------ */
-/*  Demo project                                                       */
+/*  Demo projects (AWS and Azure; selectable from dropdown)            */
 /* ------------------------------------------------------------------ */
 
-export const SEED_PROJECT: Project = {
-  id: "proj-a1b2c3d4",
-  name: "payments-service",
+const DEMO_CONFIG = {
+  excludePaths: ["node_modules/**", ".git/**", "dist/**"],
+  includePatterns: ["**/*.py", "**/*.ts", "**/*.tf", "**/*.yaml"],
+  autoValidate: true,
+  dryRun: false,
+  maxConcurrency: 4,
+};
+
+export const SEED_PROJECT_AWS: Project = {
+  id: "demo-aws",
+  name: "AWS Demo",
   path: "demos/aws_python_microservice/input",
   sourceProvider: "aws",
   targetProvider: "gcp",
-  config: {
-    excludePaths: ["node_modules/**", ".git/**", "dist/**"],
-    includePatterns: ["**/*.py", "**/*.ts", "**/*.tf", "**/*.yaml"],
-    autoValidate: true,
-    dryRun: false,
-    maxConcurrency: 4,
-  },
+  config: { ...DEMO_CONFIG },
   createdAt: "2026-03-06T10:00:00Z",
   updatedAt: "2026-03-08T14:22:00Z",
 };
+
+export const SEED_PROJECT_AZURE: Project = {
+  id: "demo-azure",
+  name: "Azure Demo",
+  path: "demos/azure_python_webapp/input",
+  sourceProvider: "azure",
+  targetProvider: "gcp",
+  config: { ...DEMO_CONFIG },
+  createdAt: "2026-03-06T10:00:00Z",
+  updatedAt: "2026-03-08T14:22:00Z",
+};
+
+/** List of built-in demos for the project dropdown. */
+export const DEMO_PROJECTS: Project[] = [SEED_PROJECT_AWS, SEED_PROJECT_AZURE];
+
+/** @deprecated Use SEED_PROJECT_AWS for default. */
+export const SEED_PROJECT = SEED_PROJECT_AWS;
 
 /* ------------------------------------------------------------------ */
 /*  Manifest entries                                                   */

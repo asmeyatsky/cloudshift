@@ -24,7 +24,9 @@ export default function DiffPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white">Diff Viewer</h1>
         <p className="mt-1 text-base text-gray-500">
-          Side-by-side comparison of planned transformations
+          {activeProject
+            ? `${activeProject.sourceProvider.toUpperCase()} code (left) → refactored GCP code (right)`
+            : "Side-by-side: original code → refactored GCP code"}
         </p>
       </div>
 
@@ -53,7 +55,11 @@ export default function DiffPage() {
         </div>
       )}
 
-      <DiffViewer diffs={diffs} />
+      <DiffViewer
+        diffs={diffs}
+        sourceLabel={activeProject ? `${activeProject.sourceProvider.toUpperCase()} code` : "Original"}
+        targetLabel="GCP code"
+      />
     </div>
   );
 }
