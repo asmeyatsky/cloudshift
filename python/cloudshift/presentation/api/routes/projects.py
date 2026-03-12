@@ -65,9 +65,10 @@ async def create_from_snippet(
 
 
 class FromGitBody(BaseModel):
-    repo_url: str = Field(description="HTTPS Git repository URL")
+    repo_url: str = Field(description="HTTPS Git repository URL (can be a GitHub tree URL, e.g. .../tree/main/python/)")
     branch: str = Field(default="main", description="Branch to clone")
     name: str = Field(description="Project name (used as directory under /tmp/cloudshift)")
+    subpath: str | None = Field(default=None, description="Subfolder to use as scan root (e.g. 'python'). Overrides URL-derived subpath if set.")
     source_provider: str = Field(default="AWS", description="AWS or AZURE")
     target_provider: str = Field(default="GCP", description="Target cloud (GCP)")
 
@@ -76,6 +77,43 @@ def _safe_dir_name(name: str) -> str:
     """Sanitize name for use as a directory name (no path traversal, no leading dot)."""
     safe = re.sub(r"[^\w\-.]", "_", name.strip()).strip("._") or "repo"
     return safe[:128]
+
+
+def _normalize_git_clone_url(repo_url: str) -> tuple[str, str | None]:
+    """Convert GitHub/GitLab browser URLs to clone URLs. Returns (clone_url, subpath_or_none).
+    e.g. https://github.com/owner/repo/tree/main/python/ -> (https://github.com/owner/repo.git, 'python')
+    """
+    url = repo_url.strip().rstrip("/")
+    subpath: str | None = None
+    # GitHub: .../owner/repo/tree/<branch>/path or /blob/<branch>/path
+    m = re.match(r"(https?://github\.com/[^/]+/[^/]+?)(?:/tree/[^/]+(?:/(.+))?)?/?(?:#.*)?$", url, re.I)
+    if m:
+        base = m.group(1)
+        if base.endswith(".git"):
+            clone_url = base
+        else:
+            clone_url = base if base.endswith("/") else base + ".git"
+        if m.lastindex >= 2 and m.group(2):
+            subpath = m.group(2).rstrip("/").split("/")[0] or None  # first segment only for safety
+        return (clone_url, subpath)
+    # GitLab: .../owner/repo/-/tree/branch/path
+    m = re.match(r"(https?://gitlab\.com/[^/]+(?:/[^/]+)*?)(?:/-/tree/[^/]+(?:/(.+))?)?/?(?:#.*)?$", url, re.I)
+    if m:
+        base = m.group(1).rstrip("/")
+        clone_url = base + ".git" if not base.endswith(".git") else base
+        if m.lastindex >= 2 and m.group(2):
+            subpath = m.group(2).rstrip("/").split("/")[0] or None
+        return (clone_url, subpath)
+    # Already a clone URL or unknown; no subpath
+    if "/tree/" in url or "/blob/" in url:
+        # Strip trailing /tree/... or /blob/... so clone at least gets repo root
+        for sep in ["/tree/", "/blob/"]:
+            if sep in url:
+                url = url.split(sep)[0].rstrip("/")
+                break
+        if re.match(r"https?://github\.com/[^/]+/[^/]+$", url, re.I):
+            url = url if url.endswith(".git") else url + ".git"
+    return (url, None)
 
 
 @router.post("/from-git", summary="Clone a Git repo and register for scanning (AWS/Azure → GCP)")
@@ -89,6 +127,10 @@ async def create_from_git(
     if not shutil.which("git"):
         raise HTTPException(status_code=503, detail="Git is not available in this environment")
 
+    clone_url, subpath = _normalize_git_clone_url(body.repo_url)
+    if not clone_url.lower().startswith("https://"):
+        raise HTTPException(status_code=400, detail="Only HTTPS clone URLs are allowed")
+
     project_id = uuid.uuid4().hex[:12]
     dir_name = _safe_dir_name(body.name) or "repo"
     project_dir = (GIT_IMPORT_BASE / dir_name).resolve()
@@ -101,7 +143,7 @@ async def create_from_git(
 
     try:
         subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", body.branch, body.repo_url.strip(), str(project_dir)],
+            ["git", "clone", "--depth", "1", "--branch", body.branch, clone_url, str(project_dir)],
             check=True,
             timeout=600,  # 10 min for large repos (e.g. azure-quickstart-templates)
             capture_output=True,
@@ -116,5 +158,27 @@ async def create_from_git(
             shutil.rmtree(project_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=f"Clone failed: {e.stderr or e.stdout or str(e)}")
 
+    # Use explicit subpath from request, or URL-derived subpath (e.g. from .../tree/main/python/)
+    use_subpath = (body.subpath or "").strip() or subpath
     root_path = str(project_dir)
+    if use_subpath:
+        # Disallow path traversal: only a single segment
+        use_subpath = use_subpath.replace("\\", "/").strip("/").split("/")[0] or ""
+    if use_subpath:
+        subdir = (project_dir / use_subpath).resolve()
+        if subdir.is_dir() and str(subdir).startswith(str(project_dir)):
+            root_path = str(subdir)
+        else:
+            # Case-insensitive match (e.g. repo has "Python", user asked for "python")
+            try:
+                for entry in project_dir.iterdir():
+                    if entry.is_dir() and entry.name.lower() == use_subpath.lower():
+                        subdir = entry.resolve()
+                        if str(subdir).startswith(str(project_dir)):
+                            root_path = str(subdir)
+                        break
+            except OSError:
+                pass
+        # else: subpath not present in repo, keep full clone as root
+
     return {"project_id": project_id, "root_path": root_path, "name": body.name}

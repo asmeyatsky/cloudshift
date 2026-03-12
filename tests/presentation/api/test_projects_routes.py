@@ -168,3 +168,58 @@ class TestFromGit:
         assert "clone" in call_args
         assert "main" in call_args
         assert "https://github.com/example/repo.git" in call_args
+
+    def test_from_git_normalizes_github_tree_url(self, client, tmp_path):
+        """Pasting a GitHub browser URL (e.g. .../tree/main/python/) should clone repo root."""
+        base = tmp_path / "git_import"
+        base.mkdir()
+        with patch.object(projects_router, "GIT_IMPORT_BASE", base), patch(
+            "cloudshift.presentation.api.routes.projects.subprocess.run"
+        ) as mock_run:
+            mock_run.return_value = type("R", (), {"returncode": 0})()
+            resp = client.post(
+                "/api/projects/from-git",
+                json={
+                    "repo_url": "https://github.com/aws-samples/aws-cdk-examples/tree/main/python/",
+                    "branch": "main",
+                    "name": "cdk-python",
+                    "source_provider": "AWS",
+                    "target_provider": "GCP",
+                },
+            )
+        assert resp.status_code == 200
+        call_args = mock_run.call_args[0][0]
+        # Clone URL must be repo root, not .../tree/main/python/
+        assert "https://github.com/aws-samples/aws-cdk-examples.git" in call_args
+        assert "/tree/" not in " ".join(call_args)
+
+    def test_from_git_explicit_subpath_uses_subfolder_as_root(self, client, tmp_path):
+        """When subpath is provided and exists after clone, root_path is the subfolder."""
+        base = tmp_path / "git_import"
+        base.mkdir()
+
+        def mock_clone(*args, **kwargs):
+            # Simulate clone: create project dir and subfolder so route finds it
+            project_dir = base / "cdk-python"
+            project_dir.mkdir(parents=True, exist_ok=True)
+            (project_dir / "python").mkdir(exist_ok=True)
+            (project_dir / "python" / "app.py").write_text("# code")
+
+        with patch.object(projects_router, "GIT_IMPORT_BASE", base), patch(
+            "cloudshift.presentation.api.routes.projects.subprocess.run"
+        ) as mock_run:
+            mock_run.side_effect = mock_clone
+            resp = client.post(
+                "/api/projects/from-git",
+                json={
+                    "repo_url": "https://github.com/aws-samples/aws-cdk-examples.git",
+                    "branch": "main",
+                    "name": "cdk-python",
+                    "subpath": "python",
+                    "source_provider": "AWS",
+                    "target_provider": "GCP",
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["root_path"] == str(base / "cdk-python" / "python")

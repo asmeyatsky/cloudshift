@@ -35,6 +35,7 @@ export default function ImportProjectModal({ open, onClose }: Props) {
   const [mode, setMode] = useState<ImportMode>("git");
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
+  const [subpath, setSubpath] = useState("");
   const [localPath, setLocalPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [source, setSource] = useState<CloudProvider>("aws");
@@ -60,11 +61,23 @@ export default function ImportProjectModal({ open, onClose }: Props) {
     return parts[parts.length - 1] || "";
   };
 
+  /** Derive subfolder from GitHub/GitLab tree URL (e.g. .../tree/main/python/ -> "python"). */
+  const deriveSubpathFromUrl = (url: string): string => {
+    const u = url.trim();
+    const treeMatch = u.match(/\/tree\/[^/]+\/([^/#?]+)/);
+    if (treeMatch) return treeMatch[1].replace(/\/$/, "").split("/")[0] || "";
+    const blobMatch = u.match(/\/blob\/[^/]+\/([^/#?]+)/);
+    if (blobMatch) return blobMatch[1].replace(/\/$/, "").split("/")[0] || "";
+    return "";
+  };
+
   const handleUrlChange = (url: string) => {
     setRepoUrl(url);
     if (!projectName || projectName === deriveName(repoUrl)) {
       setProjectName(deriveName(url));
     }
+    const derived = deriveSubpathFromUrl(url);
+    if (derived) setSubpath(derived);
   };
 
   const handlePathChange = (path: string) => {
@@ -142,6 +155,7 @@ export default function ImportProjectModal({ open, onClose }: Props) {
         repo_url: repoUrl.trim(),
         branch: branch.trim() || "main",
         name: projectName.trim(),
+        subpath: subpath.trim() || undefined,
         source_provider: source.toUpperCase(),
         target_provider: target.toUpperCase(),
       });
@@ -175,6 +189,7 @@ export default function ImportProjectModal({ open, onClose }: Props) {
       setRepoUrl("");
       setProjectName("");
       setBranch("main");
+      setSubpath("");
       return;
     }
 
@@ -350,6 +365,18 @@ export default function ImportProjectModal({ open, onClose }: Props) {
                   value={branch}
                   onChange={(e) => setBranch(e.target.value)}
                   placeholder="main"
+                  className="w-full rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2.5 font-mono text-sm text-gray-200 placeholder:text-gray-600 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-400">
+                  Subfolder to scan (optional)
+                </label>
+                <input
+                  type="text"
+                  value={subpath}
+                  onChange={(e) => setSubpath(e.target.value)}
+                  placeholder="e.g. python — only this folder is used as project root"
                   className="w-full rounded-lg border border-white/[0.08] bg-surface-200 px-3 py-2.5 font-mono text-sm text-gray-200 placeholder:text-gray-600 focus:border-primary-500/50 focus:outline-none focus:ring-1 focus:ring-primary-500/30"
                 />
               </div>

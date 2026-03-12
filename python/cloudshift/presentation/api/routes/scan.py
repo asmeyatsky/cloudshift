@@ -149,6 +149,21 @@ async def estimate_repo_size(
             detail="Path not under allowed_scan_paths",
         )
 
+    if not root.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Path does not exist on the server: {root}. "
+                "If you imported from Git, use the path returned by the import. "
+                "For local/demo projects, ensure the path exists where the backend is running."
+            ),
+        )
+    if not root.is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Path is not a directory: {root}. Scan and estimate require a directory.",
+        )
+
     try:
         paths = await asyncio.to_thread(
             container.walker.list_files, root, None

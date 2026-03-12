@@ -88,6 +88,27 @@ class ScanProjectUseCase:
                 error=str(exc),
             )
 
+        if not root_path.exists():
+            return ScanResult(
+                project_id=project_id,
+                root_path=str(root_path),
+                source_provider=request.source_provider,
+                target_provider=request.target_provider,
+                error=(
+                    f"Path does not exist on the server: {root_path}. "
+                    "If you imported from Git, use the path returned by the import. "
+                    "For local/demo projects, ensure the path exists where the backend is running."
+                ),
+            )
+        if not root_path.is_dir():
+            return ScanResult(
+                project_id=project_id,
+                root_path=str(root_path),
+                source_provider=request.source_provider,
+                target_provider=request.target_provider,
+                error=f"Path is not a directory: {root_path}. Scan requires a directory.",
+            )
+
         await self._emit({"type": "ScanStarted", "project_id": project_id, "root": str(root_path)})
 
         try:

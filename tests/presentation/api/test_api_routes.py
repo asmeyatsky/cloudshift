@@ -235,6 +235,14 @@ class TestScanRoutes:
         assert "message" in data
         assert "by_extension" in data
 
+    def test_post_scan_estimate_path_not_exist_returns_400(self, client):
+        # Path under allowed "." but does not exist
+        resp = client.post("/api/scan/estimate", json={"root_path": "./nonexistent_dir_xyz_123"})
+        assert resp.status_code == 400, resp.text
+        data = resp.json()
+        assert "detail" in data
+        assert "does not exist" in data["detail"].lower()
+
     def test_get_scan_with_error_result(self, client):
         from cloudshift.presentation.api.routes import scan as scan_mod
 

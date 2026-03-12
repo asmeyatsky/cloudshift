@@ -95,20 +95,33 @@ export default function Dashboard() {
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [repoEstimate, setRepoEstimate] = useState<ScanEstimate | null>(null);
   const [repoEstimateLoading, setRepoEstimateLoading] = useState(false);
+  const [repoEstimateError, setRepoEstimateError] = useState<string | null>(null);
   const [showRunConfirm, setShowRunConfirm] = useState(false);
   const abortRef = useRef(false);
 
   useEffect(() => {
     if (!activeProject?.path) {
       setRepoEstimate(null);
+      setRepoEstimateError(null);
       return;
     }
     setRepoEstimateLoading(true);
+    setRepoEstimateError(null);
     scanApi.estimate(activeProject.path).then((res) => {
       setRepoEstimateLoading(false);
-      if (res.success && res.data) setRepoEstimate(res.data);
-      else setRepoEstimate(null);
-    }).catch(() => setRepoEstimateLoading(false));
+      if (res.success && res.data) {
+        setRepoEstimate(res.data);
+        setRepoEstimateError(null);
+      } else {
+        setRepoEstimate(null);
+        setRepoEstimateError(res.error ?? "Could not estimate repo size.");
+      }
+    }).catch((err: any) => {
+      setRepoEstimateLoading(false);
+      setRepoEstimate(null);
+      const msg = err?.response?.data?.detail ?? err?.message ?? "Could not estimate repo size.";
+      setRepoEstimateError(typeof msg === "string" ? msg : String(msg));
+    });
   }, [activeProject?.id, activeProject?.path]);
 
   const addLog = useCallback(
@@ -252,10 +265,12 @@ export default function Dashboard() {
                 "No project selected"
               )}
             </p>
-            {activeProject && (repoEstimateLoading || repoEstimate) && (
+            {activeProject && (repoEstimateLoading || repoEstimate || repoEstimateError) && (
               <p className="mt-2 text-sm text-gray-600">
                 {repoEstimateLoading ? (
                   "Estimating repo size…"
+                ) : repoEstimateError ? (
+                  <span className="text-amber-400/90">{repoEstimateError}</span>
                 ) : repoEstimate ? (
                   <>
                     <span className="text-gray-500">
@@ -263,9 +278,14 @@ export default function Dashboard() {
                       {repoEstimate.scannable_files > 0 && (
                         <> ({repoEstimate.scannable_files.toLocaleString()} scannable)</>
                       )}
-                      . Est. plan: ~{repoEstimate.estimated_plan_minutes} min.
+                      {repoEstimate.scannable_files === 0 && repoEstimate.total_files === 0 && (
+                        <span className="text-amber-400/90"> No files found. Path may not exist on the server—import from Git or use a path that exists where the backend runs.</span>
+                      )}
+                      {repoEstimate.scannable_files > 0 && (
+                        <>. Est. plan: ~{repoEstimate.estimated_plan_minutes} min.</>
+                      )}
                     </span>
-                    {repoEstimate.message && (
+                    {repoEstimate.message && repoEstimate.scannable_files > 0 && (
                       <span className="ml-2 text-amber-400/90">{repoEstimate.message}</span>
                     )}
                   </>

@@ -228,6 +228,7 @@ export const projectApi = {
     repo_url: string;
     branch: string;
     name: string;
+    subpath?: string;
     source_provider: string;
     target_provider: string;
   }) => post<FromSnippetResponse>("/projects/from-git", body),
