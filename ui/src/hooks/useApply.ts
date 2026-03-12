@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { applyApi } from "../services/api";
 import { useProjectStore, useOperationStore } from "../store";
-import type { ApplyResult } from "../types";
+import type { ApplyResult, FileDiff } from "../types";
 
 function mapApplyResponse(data: Record<string, unknown>): ApplyResult {
   return {
@@ -15,6 +15,24 @@ function mapApplyResponse(data: Record<string, unknown>): ApplyResult {
   };
 }
 
+function buildFileDiffsFromApplyResult(data: Record<string, unknown>): FileDiff[] {
+  const details = data.modified_file_details as Array<{ path: string; original_content: string; modified_content: string }> | undefined;
+  if (!Array.isArray(details) || details.length === 0) return [];
+  return details.map((f) => {
+    const orig = f.original_content ?? "";
+    const mod = f.modified_content ?? "";
+    const origLines = orig.split("\n").length;
+    const modLines = mod.split("\n").length;
+    return {
+      filePath: f.path,
+      original: orig,
+      modified: mod,
+      hunks: [],
+      stats: { additions: Math.max(0, modLines - origLines), deletions: Math.max(0, origLines - modLines) },
+    };
+  });
+}
+
 export function useApply() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const planResult = useOperationStore((s) => s.planResult);
@@ -22,6 +40,7 @@ export function useApply() {
   const progress = useOperationStore((s) => s.progress);
   const applyResult = useOperationStore((s) => s.applyResult);
   const setApplyResult = useOperationStore((s) => s.setApplyResult);
+  const setDiffs = useOperationStore((s) => s.setDiffs);
   const setRunning = useOperationStore((s) => s.setRunning);
   const setError = useOperationStore((s) => s.setError);
 
@@ -62,7 +81,10 @@ export function useApply() {
           attempts += 1;
           const statusRes = await applyApi.status(jobId);
           if (statusRes.success && statusRes.data) {
-            setApplyResult(mapApplyResponse(statusRes.data as unknown as Record<string, unknown>));
+            const data = statusRes.data as unknown as Record<string, unknown>;
+            setApplyResult(mapApplyResponse(data));
+            const fileDiffs = buildFileDiffsFromApplyResult(data);
+            if (fileDiffs.length > 0) setDiffs(fileDiffs);
             setRunning(false);
             resolve();
             return;
@@ -85,7 +107,7 @@ export function useApply() {
         poll();
       });
     });
-  }, [activeProject, planResult, running, setRunning, setError, setApplyResult]);
+  }, [activeProject, planResult, running, setRunning, setError, setApplyResult, setDiffs]);
 
   return { startApply, running, applyResult, progress };
 }

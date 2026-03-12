@@ -207,10 +207,22 @@ class DiffResponse(BaseModel):
     hunks: list[HunkResponse] = Field(default_factory=list)
 
 
+class ModifiedFileDetailResponse(BaseModel):
+    """Full file content before/after for diff viewer."""
+    path: str
+    original_content: str
+    modified_content: str
+    language: str = "python"
+
+
 class ApplyResultResponse(BaseModel):
     plan_id: str
     applied_steps: list[str] = Field(default_factory=list)
     diffs: list[DiffResponse] = Field(default_factory=list)
+    modified_file_details: list[ModifiedFileDetailResponse] = Field(
+        default_factory=list,
+        description="Full original/modified content per file for UI diff viewer.",
+    )
     files_modified: int = 0
     success: bool = True
     errors: list[str] = Field(default_factory=list)

@@ -10,19 +10,18 @@ import PatternsPage from "./pages/PatternsPage";
 import SettingsPage from "./pages/SettingsPage";
 import ReportPage from "./pages/ReportPage";
 import { useAuthStore } from "./store/authStore";
-import { useProjectStore, usePatternsStore } from "./store";
+import { useProjectStore } from "./store";
 import { authApi } from "./services/api";
-import { SEED_PROJECT, SEED_PATTERNS } from "./seed";
+import { SEED_PROJECT } from "./seed";
 
 function useSeedData() {
   const setProjects = useProjectStore((s) => s.setProjects);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
-  const setPatterns = usePatternsStore((s) => s.setPatterns);
 
   useEffect(() => {
     setProjects([SEED_PROJECT]);
     setActiveProject(SEED_PROJECT);
-    setPatterns(SEED_PATTERNS);
+    // Patterns are loaded from API when user visits Patterns page (so Azure + AWS patterns show).
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }
 

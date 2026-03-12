@@ -6,7 +6,6 @@ import { patternsApi } from "../services/api";
 import type { Pattern } from "../types";
 
 export default function PatternsPage() {
-  const patterns = usePatternsStore((s) => s.patterns);
   const setPatterns = usePatternsStore((s) => s.setPatterns);
   const selectedPattern = usePatternsStore((s) => s.selectedPattern);
   const setSelectedPattern = usePatternsStore((s) => s.setSelectedPattern);
@@ -14,7 +13,6 @@ export default function PatternsPage() {
   const setLoading = usePatternsStore((s) => s.setLoading);
 
   useEffect(() => {
-    if (patterns.length > 0) return;
     setLoading(true);
     patternsApi.listNormalized().then((res: { success: boolean; data?: Pattern[] }) => {
       if (res.success && res.data) {
@@ -22,7 +20,7 @@ export default function PatternsPage() {
       }
       setLoading(false);
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // Always fetch patterns from API so Azure and AWS patterns are available.
 
   const handleSelect = (pattern: Pattern) => {
     setSelectedPattern(pattern);
