@@ -114,7 +114,7 @@ export default function Dashboard() {
         setRepoEstimateError(null);
       } else {
         setRepoEstimate(null);
-        setRepoEstimateError(res.error ?? "Could not estimate repo size.");
+        setRepoEstimateError(res.success === false ? (res.error ?? "Could not estimate repo size.") : "Could not estimate repo size.");
       }
     }).catch((err: any) => {
       setRepoEstimateLoading(false);

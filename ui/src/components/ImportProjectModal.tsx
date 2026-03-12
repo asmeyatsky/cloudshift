@@ -65,9 +65,11 @@ export default function ImportProjectModal({ open, onClose }: Props) {
   const deriveSubpathFromUrl = (url: string): string => {
     const u = url.trim();
     const treeMatch = u.match(/\/tree\/[^/]+\/([^/#?]+)/);
-    if (treeMatch) return treeMatch[1].replace(/\/$/, "").split("/")[0] || "";
+    const treePath = treeMatch?.[1];
+    if (treePath) return treePath.replace(/\/$/, "").split("/")[0] ?? "";
     const blobMatch = u.match(/\/blob\/[^/]+\/([^/#?]+)/);
-    if (blobMatch) return blobMatch[1].replace(/\/$/, "").split("/")[0] || "";
+    const blobPath = blobMatch?.[1];
+    if (blobPath) return blobPath.replace(/\/$/, "").split("/")[0] ?? "";
     return "";
   };
 
