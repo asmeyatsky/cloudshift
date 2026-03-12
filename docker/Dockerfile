@@ -38,6 +38,7 @@ RUN pip install /tmp/*.whl && rm /tmp/*.whl
 
 COPY --from=ui-builder --chown=cloudshift:cloudshift /build/ui/dist/ /app/static/
 COPY --chown=cloudshift:cloudshift patterns/ /app/patterns/
+COPY --chown=cloudshift:cloudshift demos/ /app/demos/
 
 # Create data directory and set permissions
 RUN mkdir -p /app/data && chown cloudshift:cloudshift /app/data
