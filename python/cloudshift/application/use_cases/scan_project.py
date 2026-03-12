@@ -89,6 +89,9 @@ class ScanProjectUseCase:
             )
 
         if not root_path.exists():
+            hint = ""
+            if "/tmp/cloudshift" in str(root_path):
+                hint = " The cloned repo may be on another server instance. Use Re-import from Git to clone again on this instance."
             return ScanResult(
                 project_id=project_id,
                 root_path=str(root_path),
@@ -96,8 +99,9 @@ class ScanProjectUseCase:
                 target_provider=request.target_provider,
                 error=(
                     f"Path does not exist on the server: {root_path}. "
-                    "If you imported from Git, use the path returned by the import. "
-                    "For local/demo projects, ensure the path exists where the backend is running."
+                    "If you imported from Git, use the path returned by the import."
+                    + hint
+                    + " For local/demo projects, ensure the path exists where the backend is running."
                 ),
             )
         if not root_path.is_dir():

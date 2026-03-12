@@ -181,4 +181,11 @@ async def create_from_git(
                 pass
         # else: subpath not present in repo, keep full clone as root
 
-    return {"project_id": project_id, "root_path": root_path, "name": body.name}
+    return {
+        "project_id": project_id,
+        "root_path": root_path,
+        "name": body.name,
+        "repo_url": clone_url,
+        "branch": body.branch,
+        "subpath": body.subpath.strip() if (body.subpath or "").strip() else (subpath or None),
+    }

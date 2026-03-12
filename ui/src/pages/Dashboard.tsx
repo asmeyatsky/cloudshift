@@ -29,7 +29,7 @@ import { usePlan } from "../hooks/usePlan";
 import { useApply } from "../hooks/useApply";
 import { useValidation } from "../hooks/useValidation";
 import PipelineTimer from "../components/PipelineTimer";
-import { scanApi, type ScanEstimate } from "../services/api";
+import { scanApi, projectApi, type ScanEstimate } from "../services/api";
 
 type PipelineStep = "scan" | "plan" | "apply" | "validate";
 
@@ -96,8 +96,41 @@ export default function Dashboard() {
   const [repoEstimate, setRepoEstimate] = useState<ScanEstimate | null>(null);
   const [repoEstimateLoading, setRepoEstimateLoading] = useState(false);
   const [repoEstimateError, setRepoEstimateError] = useState<string | null>(null);
+  const [reimporting, setReimporting] = useState(false);
   const [showRunConfirm, setShowRunConfirm] = useState(false);
   const abortRef = useRef(false);
+
+  const handleReimportFromGit = useCallback(async () => {
+    if (!activeProject?.repoUrl) return;
+    setReimporting(true);
+    setRepoEstimateError(null);
+    const res = await projectApi.createFromGit({
+      repo_url: activeProject.repoUrl,
+      branch: activeProject.branch ?? "main",
+      name: activeProject.name,
+      subpath: activeProject.subpath ?? undefined,
+      source_provider: activeProject.sourceProvider.toUpperCase(),
+      target_provider: activeProject.targetProvider.toUpperCase(),
+    });
+    setReimporting(false);
+    if (!res.success) {
+      setRepoEstimateError(res.error ?? "Re-import failed");
+      return;
+    }
+    const setProjects = useProjectStore.getState().setProjects;
+    const setActiveProject = useProjectStore.getState().setActiveProject;
+    const projects = useProjectStore.getState().projects;
+    const updated = { ...activeProject, id: res.data.project_id, path: res.data.root_path };
+    setProjects(projects.map((p) => (p.id === activeProject.id ? updated : p)));
+    setActiveProject(updated);
+    setRepoEstimate(null);
+    setRepoEstimateError(null);
+    setRepoEstimateLoading(true);
+    scanApi.estimate(res.data.root_path).then((r) => {
+      setRepoEstimateLoading(false);
+      if (r.success && r.data) setRepoEstimate(r.data);
+    }).catch(() => setRepoEstimateLoading(false));
+  }, [activeProject]);
 
   useEffect(() => {
     if (!activeProject?.path) {
@@ -270,7 +303,19 @@ export default function Dashboard() {
                 {repoEstimateLoading ? (
                   "Estimating repo size…"
                 ) : repoEstimateError ? (
-                  <span className="text-amber-400/90">{repoEstimateError}</span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-amber-400/90">{repoEstimateError}</span>
+                    {activeProject.repoUrl && (
+                      <button
+                        type="button"
+                        onClick={handleReimportFromGit}
+                        disabled={reimporting}
+                        className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
+                      >
+                        {reimporting ? "Re-importing…" : "Re-import repository"}
+                      </button>
+                    )}
+                  </span>
                 ) : repoEstimate ? (
                   <>
                     <span className="text-gray-500">

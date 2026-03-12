@@ -150,12 +150,16 @@ async def estimate_repo_size(
         )
 
     if not root.exists():
+        hint = ""
+        if "/tmp/cloudshift" in str(root):
+            hint = " The cloned repo may be on another server instance. Use Re-import from Git to clone again on this instance."
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Path does not exist on the server: {root}. "
-                "If you imported from Git, use the path returned by the import. "
-                "For local/demo projects, ensure the path exists where the backend is running."
+                "If you imported from Git, use the path returned by the import."
+                + hint
+                + " For local/demo projects, ensure the path exists where the backend is running."
             ),
         )
     if not root.is_dir():

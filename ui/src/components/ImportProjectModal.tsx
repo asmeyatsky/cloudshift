@@ -181,6 +181,9 @@ export default function ImportProjectModal({ open, onClose }: Props) {
         },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        ...(res.data.repo_url && { repoUrl: res.data.repo_url }),
+        ...(res.data.branch && { branch: res.data.branch }),
+        ...(res.data.subpath != null && res.data.subpath !== "" && { subpath: res.data.subpath }),
       };
       resetOps();
       setValidationResult(null);

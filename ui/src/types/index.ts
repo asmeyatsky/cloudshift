@@ -211,6 +211,10 @@ export interface Project {
   config: ProjectConfig;
   createdAt: string;
   updatedAt: string;
+  /** Set when project was imported from Git; used for Re-import when path is missing on server. */
+  repoUrl?: string;
+  branch?: string;
+  subpath?: string;
 }
 
 export interface ProjectConfig {

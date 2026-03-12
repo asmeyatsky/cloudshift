@@ -150,6 +150,27 @@ export const validationApi = {
 /*  Patterns endpoints                                                 */
 /* ------------------------------------------------------------------ */
 
+/** Map backend pattern (snake_case, uppercase providers) to UI Pattern shape so filters work for AWS and Azure. */
+function mapPatternFromApi(raw: Record<string, unknown>): Pattern {
+  const src = String(raw.source_provider ?? raw.sourceProvider ?? "").toLowerCase();
+  const tgt = String(raw.target_provider ?? raw.targetProvider ?? "").toLowerCase();
+  const id = String(raw.pattern_id ?? raw.id ?? "");
+  const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : [];
+  const category = tags[0] ?? (raw.category as string) ?? "Migration";
+  return {
+    id,
+    name: String(raw.name ?? ""),
+    description: String(raw.description ?? ""),
+    sourceProvider: (src || "aws") as Pattern["sourceProvider"],
+    targetProvider: (tgt || "gcp") as Pattern["targetProvider"],
+    resourceType: (raw.resourceType as string) ?? category,
+    category,
+    severity: ((raw.severity as string) ?? "info") as Pattern["severity"],
+    examples: Array.isArray(raw.examples) ? (raw.examples as Pattern["examples"]) : [],
+    tags,
+  };
+}
+
 export const patternsApi = {
   list: (params?: { category?: string; provider?: string; search?: string }) => {
     const query = new URLSearchParams();
@@ -160,6 +181,12 @@ export const patternsApi = {
     return get<Pattern[]>(`/patterns${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => get<Pattern>(`/patterns/${id}`),
+  /** Normalize list response so UI Pattern (camelCase, lowercase providers) works for AWS and Azure. */
+  listNormalized: async (params?: { category?: string; provider?: string; search?: string }) => {
+    const res = await patternsApi.list(params);
+    if (!res.success || !res.data) return res;
+    return { ...res, data: res.data.map((p) => mapPatternFromApi(p as unknown as Record<string, unknown>)) };
+  },
 };
 
 /* ------------------------------------------------------------------ */
@@ -202,6 +229,13 @@ export interface FromSnippetResponse {
   name: string;
 }
 
+/** Response from POST /projects/from-git (includes repo_url/branch for Re-import). */
+export interface FromGitResponse extends FromSnippetResponse {
+  repo_url?: string;
+  branch?: string;
+  subpath?: string | null;
+}
+
 export const projectApi = {
   updateConfig: async (_projectId: string, config: ProjectConfig): Promise<ApiResult<unknown>> => {
     return put("/config", {
@@ -231,7 +265,7 @@ export const projectApi = {
     subpath?: string;
     source_provider: string;
     target_provider: string;
-  }) => post<FromSnippetResponse>("/projects/from-git", body),
+  }) => post<FromGitResponse>("/projects/from-git", body),
 };
 
 export const manifestApi = {
