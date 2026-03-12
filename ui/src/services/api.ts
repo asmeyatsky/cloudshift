@@ -82,6 +82,14 @@ function put<T>(path: string, body: unknown): Promise<ApiResult<T>> {
 /*  Scan / Plan / Apply endpoints                                      */
 /* ------------------------------------------------------------------ */
 
+export interface ScanEstimate {
+  total_files: number;
+  scannable_files: number;
+  by_extension: Record<string, number>;
+  estimated_plan_minutes: number;
+  message: string;
+}
+
 export const scanApi = {
   start: (
     rootPath: string,
@@ -96,6 +104,8 @@ export const scanApi = {
       ...(projectId != null && { project_id: projectId }),
     }),
   status: (jobId: string) => get<ScanResult>(`/scan/${jobId}`),
+  estimate: (rootPath: string) =>
+    post<ScanEstimate>("/scan/estimate", { root_path: rootPath }),
 };
 
 export const planApi = {

@@ -98,6 +98,18 @@ class ScanResultResponse(BaseModel):
     error: str | None = None
 
 
+class ScanEstimateRequestBody(BaseModel):
+    root_path: str = Field(description="Project root path (must be under allowed_scan_paths).")
+
+
+class ScanEstimateResponse(BaseModel):
+    total_files: int = Field(description="Total files under root (walker).")
+    scannable_files: int = Field(description="Files with scannable extensions (py, ts, tf, etc.).")
+    by_extension: dict[str, int] = Field(default_factory=dict, description="Count per extension.")
+    estimated_plan_minutes: float = Field(description="Rough estimate for plan step (minutes).")
+    message: str = Field(default="", description="Human-readable advice for the user.")
+
+
 def _to_camel(s: str) -> str:
     parts = s.split("_")
     return "".join(p.capitalize() if i > 0 else p for i, p in enumerate(parts))

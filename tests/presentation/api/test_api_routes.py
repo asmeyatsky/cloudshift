@@ -219,6 +219,22 @@ class TestScanRoutes:
         finally:
             scan_mod._results.pop("test123", None)
 
+    def test_post_scan_estimate_returns_counts(self, client):
+        from pathlib import Path
+        container = client.app.state.container
+        # Route calls list_files via asyncio.to_thread (sync); use MagicMock
+        container.walker.list_files = MagicMock(
+            return_value=[Path("a.py"), Path("b.ts"), Path("c.txt")]
+        )
+        resp = client.post("/api/scan/estimate", json={"root_path": "."})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["total_files"] == 3
+        assert data["scannable_files"] == 2  # .py and .ts; .txt excluded
+        assert "estimated_plan_minutes" in data
+        assert "message" in data
+        assert "by_extension" in data
+
     def test_get_scan_with_error_result(self, client):
         from cloudshift.presentation.api.routes import scan as scan_mod
 

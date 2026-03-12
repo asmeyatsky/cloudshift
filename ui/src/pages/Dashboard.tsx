@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import {
   Scan,
   Map,
@@ -29,6 +29,7 @@ import { usePlan } from "../hooks/usePlan";
 import { useApply } from "../hooks/useApply";
 import { useValidation } from "../hooks/useValidation";
 import PipelineTimer from "../components/PipelineTimer";
+import { scanApi, type ScanEstimate } from "../services/api";
 
 type PipelineStep = "scan" | "plan" | "apply" | "validate";
 
@@ -92,7 +93,23 @@ export default function Dashboard() {
   const [runningStep, setRunningStep] = useState<PipelineStep | null>(null);
   const [stepStartedAt, setStepStartedAt] = useState<number>(0);
   const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [repoEstimate, setRepoEstimate] = useState<ScanEstimate | null>(null);
+  const [repoEstimateLoading, setRepoEstimateLoading] = useState(false);
+  const [showRunConfirm, setShowRunConfirm] = useState(false);
   const abortRef = useRef(false);
+
+  useEffect(() => {
+    if (!activeProject?.path) {
+      setRepoEstimate(null);
+      return;
+    }
+    setRepoEstimateLoading(true);
+    scanApi.estimate(activeProject.path).then((res) => {
+      setRepoEstimateLoading(false);
+      if (res.success && res.data) setRepoEstimate(res.data);
+      else setRepoEstimate(null);
+    }).catch(() => setRepoEstimateLoading(false));
+  }, [activeProject?.id, activeProject?.path]);
 
   const addLog = useCallback(
     (message: string, type: LogEntry["type"] = "info") => {
@@ -235,11 +252,61 @@ export default function Dashboard() {
                 "No project selected"
               )}
             </p>
+            {activeProject && (repoEstimateLoading || repoEstimate) && (
+              <p className="mt-2 text-sm text-gray-600">
+                {repoEstimateLoading ? (
+                  "Estimating repo size…"
+                ) : repoEstimate ? (
+                  <>
+                    <span className="text-gray-500">
+                      ~{repoEstimate.total_files.toLocaleString()} files
+                      {repoEstimate.scannable_files > 0 && (
+                        <> ({repoEstimate.scannable_files.toLocaleString()} scannable)</>
+                      )}
+                      . Est. plan: ~{repoEstimate.estimated_plan_minutes} min.
+                    </span>
+                    {repoEstimate.message && (
+                      <span className="ml-2 text-amber-400/90">{repoEstimate.message}</span>
+                    )}
+                  </>
+                ) : null}
+              </p>
+            )}
           </div>
         </div>
 
         {activeProject && (
           <div className="flex items-center gap-3">
+            {showRunConfirm && repoEstimate && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+                <div className="w-full max-w-md rounded-2xl border border-white/10 bg-surface-100 p-6 shadow-xl">
+                  <h3 className="text-lg font-semibold text-white">Large repo</h3>
+                  <p className="mt-2 text-sm text-gray-400">
+                    This repo has {repoEstimate.scannable_files.toLocaleString()} scannable files.
+                    {repoEstimate.message && ` ${repoEstimate.message}`}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Planning may take {Math.round(repoEstimate.estimated_plan_minutes)}–{Math.round(repoEstimate.estimated_plan_minutes * 1.5)} minutes. You can Cancel anytime.
+                  </p>
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowRunConfirm(false)}
+                      className="rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-gray-400 hover:bg-white/5"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowRunConfirm(false); runPipeline(); }}
+                      className="rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-500"
+                    >
+                      Run pipeline
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {pipelineRunning && (
               <button
                 onClick={handleReset}
@@ -259,7 +326,14 @@ export default function Dashboard() {
                 </button>
               )}
             <button
-              onClick={runPipeline}
+              onClick={() => {
+                if (pipelineRunning) return;
+                if (repoEstimate && repoEstimate.scannable_files > 200) {
+                  setShowRunConfirm(true);
+                } else {
+                  runPipeline();
+                }
+              }}
               disabled={pipelineRunning}
               className="group flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-accent-purple px-6 py-3 text-base font-semibold text-white shadow-lg shadow-primary-500/20 transition-all hover:shadow-primary-500/30 disabled:opacity-40 disabled:shadow-none"
             >

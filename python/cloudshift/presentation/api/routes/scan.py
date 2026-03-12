@@ -1,8 +1,10 @@
-"""Scan routes -- POST /api/scan, GET /api/scan/{id}."""
+"""Scan routes -- POST /api/scan, GET /api/scan/{id}, POST /api/scan/estimate."""
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -15,6 +17,8 @@ from cloudshift.presentation.api.schemas import (
     JobAccepted,
     ScanRequestBody,
     ScanResultResponse,
+    ScanEstimateRequestBody,
+    ScanEstimateResponse,
     ScanFileRequestBody,
     FileScanResultResponse,
     PatternMatchResponse,
@@ -24,6 +28,11 @@ from cloudshift.presentation.api.dependencies import get_container
 from cloudshift.domain.value_objects.types import Language
 
 router = APIRouter(prefix="/api/scan", tags=["scan"])
+
+# Extensions that the scan/plan pipeline processes (same as scan use case).
+SCANNABLE_EXTENSIONS = frozenset(
+    {"py", "ts", "tsx", "js", "jsx", "tf", "hcl", "json", "yml", "yaml", "bicep"}
+)
 
 # In-memory result store (swap for Redis / DB in production).
 _results: dict[str, Any] = {}
@@ -110,6 +119,69 @@ async def scan_file(
         )
     
     return FileScanResultResponse(file=body.file_path, patterns=patterns)
+
+
+@router.post(
+    "/estimate",
+    response_model=ScanEstimateResponse,
+    summary="Estimate repo size before running pipeline",
+)
+async def estimate_repo_size(
+    body: ScanEstimateRequestBody,
+    container: Any = Depends(get_container),
+) -> ScanEstimateResponse:
+    """Return file counts and estimated plan time. Path must be under allowed_scan_paths."""
+    from cloudshift.infrastructure.config.dependency_injection import GIT_IMPORT_BASE
+
+    try:
+        root = Path(body.root_path).resolve()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid path: {e}") from e
+
+    settings = getattr(container, "_settings", None)
+    allowed = list(getattr(settings, "allowed_scan_paths", [Path(".")])) if settings else [Path(".")]
+    if GIT_IMPORT_BASE not in allowed:
+        allowed.append(GIT_IMPORT_BASE)
+    allowed_resolved = [p.resolve() for p in allowed]
+    if not any(root == p or p in root.parents for p in allowed_resolved):
+        raise HTTPException(
+            status_code=403,
+            detail="Path not under allowed_scan_paths",
+        )
+
+    try:
+        paths = await asyncio.to_thread(
+            container.walker.list_files, root, None
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not walk path: {e}") from e
+
+    total = len(paths)
+    by_ext: dict[str, int] = {}
+    for p in paths:
+        ext = (p.suffix or "").lstrip(".").lower()
+        if ext:
+            by_ext[ext] = by_ext.get(ext, 0) + 1
+    scannable = sum(by_ext.get(ext, 0) for ext in SCANNABLE_EXTENSIONS)
+
+    # Rough: ~2 sec per scannable file for plan (read + pattern match).
+    estimated_plan_minutes = max(0.5, scannable * 2.0 / 60.0)
+    if scannable > 500:
+        message = "Very large repo. Plan may take 15–30+ minutes. Consider running on a smaller subtree."
+    elif scannable > 200:
+        message = "Large repo. Plan may take 10–20 minutes."
+    elif scannable > 50:
+        message = "Moderate size. Plan may take a few minutes."
+    else:
+        message = "Small repo. Plan should complete quickly."
+
+    return ScanEstimateResponse(
+        total_files=total,
+        scannable_files=scannable,
+        by_extension=by_ext,
+        estimated_plan_minutes=round(estimated_plan_minutes, 1),
+        message=message,
+    )
 
 
 @router.post(
