@@ -28,8 +28,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize and tear down the DI container."""
     from cloudshift.infrastructure.config.dependency_injection import Container
 
-    # Use settings from app state if available, else default
-    settings = getattr(app.state, "settings", None)
+    # Build settings and container in lifespan so we read env in the running process
+    # (avoids any import-time or pre-fork env not yet set, e.g. on Cloud Run).
+    settings = Settings()
+    app.state.settings = settings
     container = Container(settings=settings)
     app.state.container = container
     llm_name = getattr(container.llm.__class__, "__name__", "?")
@@ -45,6 +47,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and return the configured FastAPI application."""
+    # Initial settings for middleware/static; lifespan will replace with fresh Settings()
     settings = settings or Settings()
     app = FastAPI(
         title="CloudShift API",

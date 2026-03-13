@@ -151,7 +151,7 @@ class Container:
         return GitSafety()
 
     def _make_validation(self) -> RustValidationAdapter:
-        return RustValidationAdapter(parser=self.parser)
+        return RustValidationAdapter(parser=self.parser, file_system=self.file_system)
 
     def _make_test_runner(self) -> SubprocessTestRunner:
         return SubprocessTestRunner()

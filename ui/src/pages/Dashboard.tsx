@@ -248,6 +248,14 @@ export default function Dashboard() {
         const valAfter = useValidationStore.getState().result;
         if (valAfter) {
           addLog(`Validation complete. Passed: ${valAfter.passed}. Issues: ${valAfter.summary.totalIssues}`, valAfter.passed ? "success" : "warning");
+          if (!valAfter.passed && valAfter.issues?.length > 0) {
+            valAfter.issues.slice(0, 5).forEach((issue) => {
+              addLog(`  • ${issue.message}`, "warning");
+            });
+            if (valAfter.issues.length > 5) {
+              addLog(`  … and ${valAfter.issues.length - 5} more (see Validation page)`, "warning");
+            }
+          }
         }
       } catch (e: any) {
         addLog(`Validation failed: ${e.message || e}`, "warning");

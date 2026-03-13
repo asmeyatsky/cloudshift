@@ -33,6 +33,24 @@ async def get_config(
     return ConfigResponse(**_config)
 
 
+@router.get(
+    "/llm",
+    summary="LLM diagnostic (for 503 debugging)",
+)
+async def get_llm_diagnostic(
+    container: Any = Depends(get_container),
+) -> dict[str, Any]:
+    """Return deployment_mode, gemini_configured, and llm adapter type (no secrets)."""
+    settings = getattr(container, "_settings", None)
+    llm = getattr(container, "llm", None)
+    llm_type = getattr(llm.__class__, "__name__", "?") if llm else "None"
+    return {
+        "deployment_mode": getattr(settings, "deployment_mode", "?"),
+        "gemini_configured": bool(getattr(settings, "gemini_api_key", None)),
+        "llm_type": llm_type,
+    }
+
+
 @router.put(
     "",
     response_model=ConfigResponse,
