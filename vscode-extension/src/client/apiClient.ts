@@ -1,3 +1,4 @@
+import { GoogleAuth } from "google-auth-library";
 import * as http from "http";
 import * as https from "https";
 import * as vscode from "vscode";
@@ -78,18 +79,80 @@ export class ApiClient {
 
   private getApiKey(): string {
     const config = vscode.workspace.getConfiguration("cloudshift");
-    return config.get<string>("apiKey", "") || "";
+    return (config.get<string>("apiKey", "") || "").trim();
   }
 
-  private request<T>(
+  private getBearerToken(): string {
+    const config = vscode.workspace.getConfiguration("cloudshift");
+    return (config.get<string>("bearerToken", "") || "").trim();
+  }
+
+  private getIapClientId(): string {
+    const config = vscode.workspace.getConfiguration("cloudshift");
+    return (config.get<string>("iapClientId", "") || "").trim();
+  }
+
+  private getIapCredentialsPath(): string {
+    const config = vscode.workspace.getConfiguration("cloudshift");
+    return (config.get<string>("iapCredentialsPath", "") || "").trim();
+  }
+
+  private shouldUseIap(): boolean {
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl.startsWith("https://")) return false;
+    try {
+      const u = new URL(baseUrl);
+      if (u.hostname === "localhost" || u.hostname === "127.0.0.1") return false;
+    } catch {
+      return false;
+    }
+    return this.getIapClientId().length > 0;
+  }
+
+  private async getIapToken(): Promise<string | null> {
+    const clientId = this.getIapClientId();
+    if (!clientId) return null;
+    const keyPath = this.getIapCredentialsPath();
+    try {
+      const opts: { keyFilename?: string } = {};
+      if (keyPath) opts.keyFilename = keyPath;
+      const auth = new GoogleAuth(opts);
+      const client = await auth.getIdTokenClient(clientId);
+      const headers = await client.getRequestHeaders();
+      const authz = headers?.Authorization;
+      if (typeof authz === "string" && /^Bearer\s+/i.test(authz)) {
+        return authz.replace(/^Bearer\s+/i, "").trim();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async request<T>(
     method: string,
     path: string,
     body?: unknown,
   ): Promise<T> {
+    const baseUrl = this.getBaseUrl();
+    let bearerToken = this.getBearerToken();
+    if (!bearerToken && this.shouldUseIap()) {
+      bearerToken = (await this.getIapToken()) || "";
+      if (!bearerToken) {
+        const keyPath = this.getIapCredentialsPath();
+        const hint = keyPath
+          ? "Check that the key file is valid and the service account has IAP access."
+          : "Use a service account: create one, add it to IAP access, download key JSON, set cloudshift.iapCredentialsPath to the file path.";
+        return Promise.reject(
+          new CloudShiftApiError(
+            `IAP auth failed. ${hint} Set cloudshift.iapClientId to your IAP OAuth Client ID.`,
+          ),
+        );
+      }
+    }
+    const apiKey = this.getApiKey();
+    const url = new URL(path, baseUrl);
     return new Promise((resolve, reject) => {
-      const baseUrl = this.getBaseUrl();
-      const apiKey = this.getApiKey();
-      const url = new URL(path, baseUrl);
       const isHttps = url.protocol === "https:";
       const transport = isHttps ? https : http;
 
@@ -98,8 +161,12 @@ export class ApiClient {
         Accept: "application/json",
       };
 
-      if (apiKey) {
+      if (bearerToken) {
+        headers["Authorization"] = `Bearer ${bearerToken}`;
+      }
+      if (apiKey && !headers["Authorization"]) {
         headers["X-API-Key"] = apiKey;
+        headers["X-Searce-ID"] = apiKey;
       }
 
       const options: http.RequestOptions = {
@@ -236,10 +303,13 @@ export class ApiClient {
   async refactorFile(
     filePath: string,
     content: string,
+    sourceProvider: "AWS" | "Azure",
   ): Promise<RefactorResult> {
     return this.request<RefactorResult>("POST", "/api/refactor/file", {
       filePath,
       content,
+      sourceProvider,
+      targetProvider: "GCP",
     });
   }
 
@@ -248,12 +318,15 @@ export class ApiClient {
     content: string,
     startLine: number,
     endLine: number,
+    sourceProvider: "AWS" | "Azure",
   ): Promise<RefactorResult> {
     return this.request<RefactorResult>("POST", "/api/refactor/selection", {
       filePath,
       content,
       startLine,
       endLine,
+      sourceProvider,
+      targetProvider: "GCP",
     });
   }
 

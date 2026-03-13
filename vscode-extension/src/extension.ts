@@ -48,12 +48,12 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  context.subscriptions.push(
-    registerRefactorFileCommand(context, apiClient),
+  registerRefactorFileCommand(context, apiClient).forEach((d) =>
+    context.subscriptions.push(d),
   );
 
-  context.subscriptions.push(
-    registerRefactorSelectionCommand(context, apiClient),
+  registerRefactorSelectionCommand(context, apiClient).forEach((d) =>
+    context.subscriptions.push(d),
   );
 
   context.subscriptions.push(

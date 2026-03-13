@@ -5,6 +5,10 @@
   "version": "0.1.0",
   "publisher": "cloudshift",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asmeyatsky/cloudshift.git"
+  },
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -25,12 +29,20 @@
         "title": "CloudShift: Scan Project"
       },
       {
-        "command": "cloudshift.refactorFile",
-        "title": "CloudShift: Refactor File"
+        "command": "cloudshift.refactorSelectionAwsToGcp",
+        "title": "CloudShift: Refactor Selection (AWS → GCP)"
       },
       {
-        "command": "cloudshift.refactorSelection",
-        "title": "CloudShift: Refactor Selection"
+        "command": "cloudshift.refactorSelectionAzureToGcp",
+        "title": "CloudShift: Refactor Selection (Azure → GCP)"
+      },
+      {
+        "command": "cloudshift.refactorFileAwsToGcp",
+        "title": "CloudShift: Refactor File (AWS → GCP)"
+      },
+      {
+        "command": "cloudshift.refactorFileAzureToGcp",
+        "title": "CloudShift: Refactor File (Azure → GCP)"
       },
       {
         "command": "cloudshift.validate",
@@ -40,12 +52,21 @@
     "menus": {
       "editor/context": [
         {
-          "command": "cloudshift.refactorSelection",
+          "command": "cloudshift.refactorSelectionAwsToGcp",
           "when": "editorHasSelection",
           "group": "cloudshift@1"
         },
         {
-          "command": "cloudshift.refactorFile",
+          "command": "cloudshift.refactorSelectionAzureToGcp",
+          "when": "editorHasSelection",
+          "group": "cloudshift@1"
+        },
+        {
+          "command": "cloudshift.refactorFileAwsToGcp",
+          "group": "cloudshift@2"
+        },
+        {
+          "command": "cloudshift.refactorFileAzureToGcp",
           "group": "cloudshift@2"
         }
       ]
@@ -87,7 +108,22 @@
         "cloudshift.apiKey": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Static API key for authenticating with the backend. Leave empty if authentication is disabled."
+          "markdownDescription": "Static API key (X-API-Key / X-Searce-ID). Use when backend uses api_key or searce_id auth."
+        },
+        "cloudshift.bearerToken": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "JWT Bearer token (Authorization: Bearer). Use when backend uses password auth; get token after logging in on the Web UI (see README)."
+        },
+        "cloudshift.iapClientId": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "IAP OAuth 2.0 Client ID (required for IAP). Get it from the IAP login redirect or your backend's IAP config."
+        },
+        "cloudshift.iapCredentialsPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to a **service account** JSON key file for IAP. Required for IAP: create a SA, add it to IAP access, download key, set this path. Or set GOOGLE_APPLICATION_CREDENTIALS."
         }
       }
     }
@@ -96,6 +132,9 @@
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "package": "vsce package"
+  },
+  "dependencies": {
+    "google-auth-library": "^9.15.1"
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
