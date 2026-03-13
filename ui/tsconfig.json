@@ -1,4 +1,5 @@
 {
+  "exclude": ["**/*.test.ts", "**/*.test.tsx", "node_modules"],
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
