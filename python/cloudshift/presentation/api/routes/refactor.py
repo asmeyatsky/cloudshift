@@ -6,9 +6,12 @@ Refactor flow: try pattern matching first; only use LLM when no pattern matches.
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 
 from cloudshift.domain.value_objects.types import CloudProvider, Language
 from cloudshift.presentation.api.dependencies import get_container
@@ -172,32 +175,41 @@ async def refactor_file(
     container=Depends(get_container),
 ) -> RefactorResultResponse:
     """Refactor file content to GCP: try patterns first, then LLM if no pattern matches."""
-    refactored = await _refactor_with_patterns(
-        body.content,
-        body.file_path,
-        body.source_provider,
-        body.target_provider,
-        container,
-    )
-    if refactored is None:
-        refactored = await _refactor_with_llm(
+    try:
+        refactored = await _refactor_with_patterns(
             body.content,
             body.file_path,
             body.source_provider,
             body.target_provider,
             container,
         )
-        if refactored == body.content and not _is_llm_configured(container):
-            raise HTTPException(
-                status_code=503,
-                detail="No pattern matched and LLM is not configured. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns for this code. Get a key at https://aistudio.google.com/apikey",
+        if refactored is None:
+            refactored = await _refactor_with_llm(
+                body.content,
+                body.file_path,
+                body.source_provider,
+                body.target_provider,
+                container,
             )
-    changes = _build_changes(body.content, refactored)
-    return RefactorResultResponse(
-        original_file=body.file_path,
-        refactored_content=refactored,
-        changes=[RefactorChangeResponse(**c) for c in changes],
-    )
+            if refactored == body.content and not _is_llm_configured(container):
+                raise HTTPException(
+                    status_code=503,
+                    detail="No pattern matched and LLM is not configured. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns for this code. Get a key at https://aistudio.google.com/apikey",
+                )
+        changes = _build_changes(body.content, refactored)
+        return RefactorResultResponse(
+            original_file=body.file_path,
+            refactored_content=refactored,
+            changes=[RefactorChangeResponse(**c) for c in changes],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Refactor file failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Refactor failed: {str(e)[:200]}",
+        ) from e
 
 
 @router.post(
@@ -210,44 +222,52 @@ async def refactor_selection(
     container=Depends(get_container),
 ) -> RefactorResultResponse:
     """Refactor selected lines to GCP: try patterns first, then LLM if no pattern matches."""
-    lines = body.content.splitlines()
-    start = max(0, body.start_line - 1)
-    end = min(len(lines), body.end_line)
-    if start >= end:
-        refactored_content = body.content
-    else:
-        selected = "\n".join(lines[start:end])
-        refactored_selection = await _refactor_with_patterns(
-            selected,
-            body.file_path,
-            body.source_provider,
-            body.target_provider,
-            container,
-        )
-        if refactored_selection is None:
-            refactored_selection = await _refactor_with_llm(
+    try:
+        lines = body.content.splitlines()
+        start = max(0, body.start_line - 1)
+        end = min(len(lines), body.end_line)
+        if start >= end:
+            refactored_content = body.content
+        else:
+            selected = "\n".join(lines[start:end])
+            refactored_selection = await _refactor_with_patterns(
                 selected,
                 body.file_path,
                 body.source_provider,
                 body.target_provider,
                 container,
             )
-        parts = []
-        if start > 0:
-            parts.append("\n".join(lines[:start]))
-        parts.append(refactored_selection)
-        if end < len(lines):
-            parts.append("\n".join(lines[end:]))
-        refactored_content = "\n".join(parts)
-    if refactored_content == body.content and not _is_llm_configured(container):
-        # No pattern matched and no LLM to fall back to
-        raise HTTPException(
-            status_code=503,
-            detail="No pattern matched and LLM is not configured. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns for this code. Get a key at https://aistudio.google.com/apikey",
+            if refactored_selection is None:
+                refactored_selection = await _refactor_with_llm(
+                    selected,
+                    body.file_path,
+                    body.source_provider,
+                    body.target_provider,
+                    container,
+                )
+            parts = []
+            if start > 0:
+                parts.append("\n".join(lines[:start]))
+            parts.append(refactored_selection)
+            if end < len(lines):
+                parts.append("\n".join(lines[end:]))
+            refactored_content = "\n".join(parts)
+        if refactored_content == body.content and not _is_llm_configured(container):
+            raise HTTPException(
+                status_code=503,
+                detail="No pattern matched and LLM is not configured. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns for this code. Get a key at https://aistudio.google.com/apikey",
+            )
+        changes = _build_changes(body.content, refactored_content)
+        return RefactorResultResponse(
+            original_file=body.file_path,
+            refactored_content=refactored_content,
+            changes=[RefactorChangeResponse(**c) for c in changes],
         )
-    changes = _build_changes(body.content, refactored_content)
-    return RefactorResultResponse(
-        original_file=body.file_path,
-        refactored_content=refactored_content,
-        changes=[RefactorChangeResponse(**c) for c in changes],
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Refactor selection failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Refactor failed: {str(e)[:200]}",
+        ) from e
