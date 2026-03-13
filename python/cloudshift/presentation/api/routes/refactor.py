@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from cloudshift.domain.value_objects.types import Language
 from cloudshift.presentation.api.dependencies import get_container
@@ -30,6 +30,14 @@ def _infer_language(file_path: str) -> Language:
     if ext in ("yaml", "yml", "json") and "template" in file_path.lower():
         return Language.CLOUDFORMATION
     return Language.PYTHON
+
+
+def _is_llm_configured(container) -> bool:
+    """True if the container has a real LLM (Gemini or Ollama), not NullLLMAdapter."""
+    llm = getattr(container, "llm", None)
+    if llm is None:
+        return False
+    return getattr(llm.__class__, "__name__", "") != "NullLLMAdapter"
 
 
 async def _refactor_with_llm(
@@ -109,6 +117,11 @@ async def refactor_file(
     container=Depends(get_container),
 ) -> RefactorResultResponse:
     """Refactor file content to GCP using LLM or pattern engine. Synchronous for editor use."""
+    if not _is_llm_configured(container):
+        raise HTTPException(
+            status_code=503,
+            detail="Refactoring requires an LLM. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server. Get a key at https://aistudio.google.com/apikey",
+        )
     refactored = await _refactor_with_llm(
         body.content,
         body.file_path,
@@ -134,6 +147,11 @@ async def refactor_selection(
     container=Depends(get_container),
 ) -> RefactorResultResponse:
     """Refactor selected lines to GCP; returns full file content with selection replaced."""
+    if not _is_llm_configured(container):
+        raise HTTPException(
+            status_code=503,
+            detail="Refactoring requires an LLM. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server. Get a key at https://aistudio.google.com/apikey",
+        )
     lines = body.content.splitlines()
     start = max(0, body.start_line - 1)
     end = min(len(lines), body.end_line)
