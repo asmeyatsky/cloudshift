@@ -27,6 +27,12 @@ import {
 } from "../store";
 import { useAuthStore } from "../store/authStore";
 import ImportProjectModal from "./ImportProjectModal";
+import {
+  SEED_PLAN_RESULT,
+  SEED_DIFFS,
+  SEED_PLAN_RESULT_AZURE,
+  SEED_DIFFS_AZURE,
+} from "../seed";
 
 const NAV_ITEMS = [
   { to: "/", icon: LayoutDashboard, label: "Pipeline" },
@@ -46,6 +52,8 @@ export default function Layout() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const resetOps = useOperationStore((s) => s.reset);
+  const setPlanResult = useOperationStore((s) => s.setPlanResult);
+  const setDiffs = useOperationStore((s) => s.setDiffs);
   const setEntries = useManifestStore((s) => s.setEntries);
   const setValidationResult = useValidationStore((s) => s.setResult);
 
@@ -62,6 +70,13 @@ export default function Layout() {
       setValidationResult(null);
       setEntries([]);
       setActiveProject(proj);
+      if (proj.id === "demo-aws") {
+        setPlanResult(SEED_PLAN_RESULT);
+        setDiffs(SEED_DIFFS);
+      } else if (proj.id === "demo-azure") {
+        setPlanResult(SEED_PLAN_RESULT_AZURE);
+        setDiffs(SEED_DIFFS_AZURE);
+      }
     }
     setProjectDropdownOpen(false);
   };

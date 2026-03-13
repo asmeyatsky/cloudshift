@@ -568,6 +568,78 @@ def update_user(user_id: str, updates: dict) -> None:
 ];
 
 /* ------------------------------------------------------------------ */
+/*  Azure demo: plan + diffs (refactor Azure → GCP)                    */
+/* ------------------------------------------------------------------ */
+
+export const SEED_PLAN_RESULT_AZURE: PlanResult = {
+  id: "plan-azure-demo",
+  jobId: "job-azure-demo",
+  manifestId: "manifest-azure-001",
+  transformations: [],
+  stepsByPattern: [
+    { pattern_id: "blob-storage-gcs", description: "Azure Blob → GCS", count: 1, step_ids: [], file_paths_sample: ["app/main.py"] },
+    { pattern_id: "azure-functions-cf", description: "Azure Functions → Cloud Functions", count: 1, step_ids: [], file_paths_sample: ["app/main.py"] },
+  ],
+  diffs: [],
+  estimatedChanges: 2,
+  riskLevel: "info",
+  timestamp: "2026-03-08T14:00:00Z",
+};
+
+export const SEED_DIFFS_AZURE: FileDiff[] = [
+  {
+    filePath: "app/main.py",
+    original: `from azure.storage.blob import BlobServiceClient
+from azure.functions import HttpRequest, HttpResponse
+import json
+import os
+
+blob_client = BlobServiceClient.from_connection_string(
+    os.environ["AZURE_STORAGE_CONNECTION_STRING"]
+)
+container = blob_client.get_container_client("uploads")
+
+
+def main(req: HttpRequest) -> HttpResponse:
+    """Azure Function: store JSON body in Blob and return 200."""
+    body = req.get_body()
+    data = json.loads(body) if body else {}
+    name = data.get("name", "default")
+    blob = container.get_blob_client(f"items/{name}.json")
+    blob.upload_blob(json.dumps(data), overwrite=True)
+    return HttpResponse(status_code=200, body="OK")
+`,
+    modified: `from google.cloud import storage
+from google.cloud import functions_v2
+import json
+import os
+
+storage_client = storage.Client()
+bucket_name = os.environ.get("GCS_BUCKET", "uploads")
+bucket = storage_client.bucket(bucket_name)
+
+
+def main(cloud_event: functions_v2.CloudEvent) -> None:
+    """Cloud Function: store JSON body in GCS and respond."""
+    data = cloud_event.data or {}
+    if isinstance(data.get("message"), dict):
+        import base64
+        raw = data["message"].get("data")
+        if raw:
+            data = json.loads(base64.b64decode(raw).decode())
+    name = data.get("name", "default")
+    blob = bucket.blob(f"items/{name}.json")
+    blob.upload_from_string(
+        json.dumps(data),
+        content_type="application/json",
+    )
+`,
+    hunks: [],
+    stats: { additions: 18, deletions: 14 },
+  },
+];
+
+/* ------------------------------------------------------------------ */
 /*  Apply result                                                       */
 /* ------------------------------------------------------------------ */
 

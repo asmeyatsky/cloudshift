@@ -12,17 +12,21 @@ import ReportPage from "./pages/ReportPage";
 import { useAuthStore } from "./store/authStore";
 import { useProjectStore, useOperationStore } from "./store";
 import { authApi } from "./services/api";
-import { DEMO_PROJECTS, SEED_PROJECT_AWS } from "./seed";
+import { DEMO_PROJECTS, SEED_PROJECT_AWS, SEED_PLAN_RESULT, SEED_DIFFS } from "./seed";
 
 function useSeedData() {
   const setProjects = useProjectStore((s) => s.setProjects);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const resetOps = useOperationStore((s) => s.reset);
+  const setPlanResult = useOperationStore((s) => s.setPlanResult);
+  const setDiffs = useOperationStore((s) => s.setDiffs);
 
   useEffect(() => {
     setProjects([...DEMO_PROJECTS]);
     setActiveProject(SEED_PROJECT_AWS);
     resetOps();
+    setPlanResult(SEED_PLAN_RESULT);
+    setDiffs(SEED_DIFFS);
     // Patterns are loaded from API when user visits Patterns page (so Azure + AWS patterns show).
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }

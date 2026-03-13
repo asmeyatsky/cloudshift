@@ -80,6 +80,8 @@ export default function Dashboard() {
   const applyResult = useOperationStore((s) => s.applyResult);
   const resetOps = useOperationStore((s) => s.reset);
   const setPipelineAborted = useOperationStore((s) => s.setPipelineAborted);
+  const runPipelineAfterSnippetImport = useOperationStore((s) => s.runPipelineAfterSnippetImport);
+  const setRunPipelineAfterSnippetImport = useOperationStore((s) => s.setRunPipelineAfterSnippetImport);
 
   const validationResult = useValidationStore((s) => s.result);
   const setValidationResult = useValidationStore((s) => s.setResult);
@@ -204,7 +206,11 @@ export default function Dashboard() {
     if (abortRef.current) { setPipelineRunning(false); setRunningStep(null); return; }
     const planAfter = useOperationStore.getState().planResult;
     if (planAfter) {
-      addLog(`Plan ready: ${planAfter.estimatedChanges} changes queued`, "success");
+      if (planAfter.estimatedChanges > 0) {
+        addLog(`Plan ready: ${planAfter.estimatedChanges} changes queued`, "success");
+      } else {
+        addLog("Plan finished but no transformations found (0 changes). Use a project with AWS/Azure code or try AWS Demo / Azure Demo.", "warning");
+      }
     }
 
     // ── Apply ──
@@ -247,6 +253,12 @@ export default function Dashboard() {
     setRunningStep(null);
     setPipelineRunning(false);
   }, [activeProject, pipelineRunning, addLog, createPlan, startApply, runValidation]);
+
+  useEffect(() => {
+    if (!runPipelineAfterSnippetImport || !activeProject) return;
+    setRunPipelineAfterSnippetImport(false);
+    runPipeline();
+  }, [runPipelineAfterSnippetImport, activeProject?.id, setRunPipelineAfterSnippetImport, runPipeline]);
 
   const handleReset = useCallback(() => {
     abortRef.current = true;

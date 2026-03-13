@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { applyApi } from "../services/api";
 import { useProjectStore, useOperationStore } from "../store";
+import { SEED_DIFFS, SEED_DIFFS_AZURE } from "../seed";
 import type { ApplyResult, FileDiff } from "../types";
 
 function mapApplyResponse(data: Record<string, unknown>): ApplyResult {
@@ -83,7 +84,12 @@ export function useApply() {
           if (statusRes.success && statusRes.data) {
             const data = statusRes.data as unknown as Record<string, unknown>;
             setApplyResult(mapApplyResponse(data));
-            const fileDiffs = buildFileDiffsFromApplyResult(data);
+            let fileDiffs = buildFileDiffsFromApplyResult(data);
+            if (fileDiffs.length === 0) {
+              const currentProject = useProjectStore.getState().activeProject;
+              if (currentProject?.id === "demo-azure") fileDiffs = SEED_DIFFS_AZURE;
+              else if (currentProject?.id === "demo-aws") fileDiffs = SEED_DIFFS;
+            }
             if (fileDiffs.length > 0) setDiffs(fileDiffs);
             setRunning(false);
             resolve();

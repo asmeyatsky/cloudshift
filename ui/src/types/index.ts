@@ -188,6 +188,10 @@ export interface PlanResult {
   estimatedChanges: number;
   riskLevel: Severity;
   timestamp: string;
+  /** Backend error (e.g. manifest not found). */
+  error?: string;
+  /** Backend warnings (e.g. no patterns matched). */
+  warnings?: string[];
 }
 
 export interface ApplyResult {

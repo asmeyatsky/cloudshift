@@ -34,6 +34,8 @@ function mapPlanResponse(data: Record<string, unknown>, jobId?: string): PlanRes
     estimatedChanges: (data.estimated_files_changed as number) ?? 0,
     riskLevel: ((data.estimated_confidence as number) ?? 0.5) >= 0.8 ? "info" : ((data.estimated_confidence as number) ?? 0.5) >= 0.5 ? "warning" : "error",
     timestamp: new Date().toISOString(),
+    error: typeof data.error === "string" ? data.error : undefined,
+    warnings: Array.isArray(data.warnings) ? (data.warnings as string[]) : undefined,
   };
 }
 

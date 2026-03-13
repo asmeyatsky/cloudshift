@@ -162,6 +162,8 @@ interface OperationState {
   error: string | null;
   /** Set by Dashboard when user cancels; hooks stop polling when true. */
   pipelineAborted: boolean;
+  /** When true, Dashboard auto-runs pipeline once (e.g. after importing from snippet). */
+  runPipelineAfterSnippetImport: boolean;
   setScanResult: (r: ScanResult | null) => void;
   setPlanResult: (r: PlanResult | null) => void;
   setApplyResult: (r: ApplyResult | null) => void;
@@ -170,6 +172,7 @@ interface OperationState {
   setRunning: (running: boolean) => void;
   setError: (error: string | null) => void;
   setPipelineAborted: (v: boolean) => void;
+  setRunPipelineAfterSnippetImport: (v: boolean) => void;
   reset: () => void;
 }
 
@@ -182,6 +185,7 @@ export const useOperationStore = create<OperationState>((set) => ({
   running: false,
   error: null,
   pipelineAborted: false,
+  runPipelineAfterSnippetImport: false,
   setScanResult: (scanResult) => set({ scanResult }),
   setPlanResult: (planResult) => set({ planResult }),
   setApplyResult: (applyResult) => set({ applyResult }),
@@ -190,6 +194,7 @@ export const useOperationStore = create<OperationState>((set) => ({
   setRunning: (running) => set({ running }),
   setError: (error) => set({ error }),
   setPipelineAborted: (pipelineAborted) => set({ pipelineAborted }),
+  setRunPipelineAfterSnippetImport: (runPipelineAfterSnippetImport) => set({ runPipelineAfterSnippetImport }),
   reset: () =>
     set({
       scanResult: null,
@@ -200,5 +205,6 @@ export const useOperationStore = create<OperationState>((set) => ({
       running: false,
       error: null,
       pipelineAborted: false,
+      runPipelineAfterSnippetImport: false,
     }),
 }));

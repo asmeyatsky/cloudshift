@@ -51,6 +51,7 @@ export default function ImportProjectModal({ open, onClose }: Props) {
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const setEntries = useManifestStore((s) => s.setEntries);
   const resetOps = useOperationStore((s) => s.reset);
+  const setRunPipelineAfterSnippetImport = useOperationStore((s) => s.setRunPipelineAfterSnippetImport);
   const setValidationResult = useValidationStore((s) => s.setResult);
 
   const deriveName = (input: string) => {
@@ -136,6 +137,7 @@ export default function ImportProjectModal({ open, onClose }: Props) {
       setEntries([]);
       setProjects([...projects, newProject]);
       setActiveProject(newProject);
+      setRunPipelineAfterSnippetImport(true);
       onClose();
       setSnippetContent("");
       setSnippetFilename("");
