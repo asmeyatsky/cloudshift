@@ -260,6 +260,50 @@ class ValidateResultResponse(BaseModel):
     error: str | None = None
 
 
+class ValidateFileRequestBody(BaseModel):
+    file_path: str = Field(alias="filePath")
+    content: str
+
+    model_config = {"populate_by_name": True}
+
+
+class ValidationErrorResponse(BaseModel):
+    line: int
+    column: int
+    message: str
+    rule: str
+
+
+class ValidationWarningResponse(BaseModel):
+    line: int
+    column: int
+    message: str
+    rule: str
+
+
+class ValidateFileResultResponse(BaseModel):
+    """Sync file validation for VS Code (syntax + quick checks)."""
+
+    file: str
+    valid: bool
+    errors: list[ValidationErrorResponse] = Field(default_factory=list)
+    warnings: list[ValidationWarningResponse] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+
+# ---------------------------------------------------------------------------
+# Manifest (VS Code)
+# ---------------------------------------------------------------------------
+
+class ManifestEntryResponse(BaseModel):
+    file: str
+    patterns: list[PatternMatchResponse] = Field(default_factory=list)
+    status: str = "pending"  # "pending" | "refactored" | "validated"
+
+    model_config = {"populate_by_name": True}
+
+
 # ---------------------------------------------------------------------------
 # Patterns
 # ---------------------------------------------------------------------------
@@ -346,3 +390,51 @@ class ConfigUpdateBody(BaseModel):
     max_parallel: int | None = Field(default=None, ge=1)
     backup_enabled: bool | None = None
     extra: dict[str, object] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Refactor (VS Code surgical refactor)
+# ---------------------------------------------------------------------------
+
+class RefactorFileRequestBody(BaseModel):
+    file_path: str = Field(alias="filePath")
+    content: str
+    source_provider: str = Field(default="AWS", alias="sourceProvider")
+    target_provider: str = Field(default="GCP", alias="targetProvider")
+
+    model_config = {"populate_by_name": True}
+
+
+class RefactorSelectionRequestBody(BaseModel):
+    file_path: str = Field(alias="filePath")
+    content: str
+    start_line: int = Field(alias="startLine", ge=1)
+    end_line: int = Field(alias="endLine", ge=1)
+    source_provider: str = Field(default="AWS", alias="sourceProvider")
+    target_provider: str = Field(default="GCP", alias="targetProvider")
+
+    model_config = {"populate_by_name": True}
+
+
+class RefactorChangeResponse(BaseModel):
+    line: int
+    original: str
+    replacement: str
+    description: str
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=_to_camel,
+        serialize_by_alias=True,
+    )
+
+
+class RefactorResultResponse(BaseModel):
+    original_file: str = Field(alias="originalFile")
+    refactored_content: str = Field(alias="refactoredContent")
+    changes: list[RefactorChangeResponse] = Field(default_factory=list)
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        serialize_by_alias=True,
+    )

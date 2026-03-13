@@ -171,6 +171,19 @@ def _report_body() -> dict:
     }
 
 
+def _refactor_file_body() -> dict:
+    return {"filePath": "main.py", "content": "import boto3\nx = 1"}
+
+
+def _refactor_selection_body() -> dict:
+    return {
+        "filePath": "main.py",
+        "content": "import boto3\nline2\nline3",
+        "startLine": 1,
+        "endLine": 2,
+    }
+
+
 # ===================================================================
 # 1. Health check
 # ===================================================================
@@ -395,6 +408,51 @@ class TestValidateRoutes:
             assert resp.json()["passed"] is True
         finally:
             validate_mod._results.pop("valres", None)
+
+    def test_post_validate_file_returns_200(self, client):
+        resp = client.post(
+            "/api/validate/file",
+            json={"filePath": "main.py", "content": "import boto3\nx = 1"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("file") == "main.py"
+        assert "valid" in data
+        assert "errors" in data
+        assert "warnings" in data
+        assert isinstance(data["errors"], list)
+        assert isinstance(data["warnings"], list)
+
+
+# ===================================================================
+# 5b. Manifest routes (VS Code)
+# ===================================================================
+
+
+class TestManifestRoutes:
+    def test_get_manifest_no_param_returns_empty(self, client):
+        resp = client.get("/api/manifest")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_get_manifest_with_project_id_returns_list(self, client, container):
+        container.project_repository = MagicMock()
+        manifest = SimpleNamespace(
+            root_path="/tmp",
+            source_provider="aws",
+            target_provider="gcp",
+            entries=[
+                SimpleNamespace(file_path="main.py", path="main.py", services=[]),
+            ],
+        )
+        container.project_repository.get_manifest = AsyncMock(return_value=manifest)
+        resp = client.get("/api/manifest?project_id=proj1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["file"] == "main.py"
+        assert data[0]["status"] == "pending"
 
 
 # ===================================================================
@@ -993,4 +1051,30 @@ class TestAppCreation:
         assert any("/api/patterns" in str(r.path) for r in app.routes)
         assert any("/api/report" in str(r.path) for r in app.routes)
         assert any("/api/config" in str(r.path) for r in app.routes)
+        assert any("/api/refactor" in str(r.path) for r in app.routes)
+        assert any("/api/manifest" in str(r.path) for r in app.routes)
         assert any("/ws/progress" in str(r.path) for r in app.routes)
+
+
+# ===================================================================
+# Refactor routes (VS Code)
+# ===================================================================
+
+
+class TestRefactorRoutes:
+    def test_post_refactor_file_returns_200(self, client):
+        resp = client.post("/api/refactor/file", json=_refactor_file_body())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("originalFile") == "main.py"
+        assert "refactoredContent" in data
+        assert "changes" in data
+        assert isinstance(data["changes"], list)
+
+    def test_post_refactor_selection_returns_200(self, client):
+        resp = client.post("/api/refactor/selection", json=_refactor_selection_body())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("originalFile") == "main.py"
+        assert "refactoredContent" in data
+        assert "changes" in data

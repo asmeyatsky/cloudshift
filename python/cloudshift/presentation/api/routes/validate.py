@@ -1,23 +1,41 @@
-"""Validate routes -- POST /api/validate, GET /api/validate/{id}."""
+"""Validate routes -- POST /api/validate, GET /api/validate/{id}, POST /api/validate/file (sync for VS Code)."""
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from cloudshift.application.dtos.validation import ValidationRequest
 from cloudshift.application.use_cases import ValidateTransformationUseCase
-from cloudshift.presentation.api.dependencies import get_validate_use_case
+from cloudshift.domain.value_objects.types import Language, Severity
+from cloudshift.presentation.api.dependencies import get_container, get_validate_use_case
 from cloudshift.presentation.api.schemas import (
     JobAccepted,
     ValidateRequestBody,
     ValidateResultResponse,
+    ValidateFileRequestBody,
+    ValidateFileResultResponse,
+    ValidationErrorResponse,
+    ValidationWarningResponse,
 )
 from cloudshift.presentation.api.websocket import manager
 
 router = APIRouter(prefix="/api/validate", tags=["validate"])
+
+
+def _infer_language(file_path: str) -> Language:
+    ext = (Path(file_path).suffix or "").lstrip(".").lower()
+    if ext in ("py",):
+        return Language.PYTHON
+    if ext in ("ts", "tsx", "js", "jsx"):
+        return Language.TYPESCRIPT
+    if ext in ("tf", "hcl"):
+        return Language.HCL
+    return Language.PYTHON
 
 _results: dict[str, Any] = {}
 
@@ -79,3 +97,45 @@ async def get_validate_result(job_id: str) -> ValidateResultResponse:
     if job_id not in _results:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Validation not found or still in progress")
     return ValidateResultResponse(**_results[job_id])
+
+
+@router.post(
+    "/file",
+    response_model=ValidateFileResultResponse,
+    summary="Validate a single file (VS Code, sync)",
+)
+async def validate_file(
+    body: ValidateFileRequestBody,
+    container=Depends(get_container),
+) -> ValidateFileResultResponse:
+    """Run syntax validation on file content. Returns errors and warnings synchronously."""
+    validation = getattr(container, "validation", None)
+    if not validation or not hasattr(validation, "validate_syntax"):
+        return ValidateFileResultResponse(
+            file=body.file_path,
+            valid=True,
+            errors=[],
+            warnings=[],
+        )
+    lang = _infer_language(body.file_path)
+    result = validation.validate_syntax(body.content, lang)
+    if asyncio.iscoroutine(result):
+        report = await result
+    else:
+        report = await asyncio.to_thread(validation.validate_syntax, body.content, lang)
+    errors = []
+    warnings = []
+    for i in report.issues:
+        line = i.line if i.line is not None else 0
+        col = getattr(i, "column", None) or 0
+        item = {"line": line, "column": col, "message": i.message, "rule": i.rule or "validation"}
+        if i.severity in (Severity.ERROR, Severity.CRITICAL):
+            errors.append(ValidationErrorResponse(**item))
+        else:
+            warnings.append(ValidationWarningResponse(**item))
+    return ValidateFileResultResponse(
+        file=body.file_path,
+        valid=report.is_valid,
+        errors=errors,
+        warnings=warnings,
+    )

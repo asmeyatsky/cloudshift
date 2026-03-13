@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from cloudshift.infrastructure.config.settings import Settings
 from cloudshift.presentation.api.dependencies import verify_auth
-from cloudshift.presentation.api.routes import apply, auth as auth_router, config, patterns, plan, report, projects, scan, validate
+from cloudshift.presentation.api.routes import apply, auth as auth_router, config, manifest as manifest_router, patterns, plan, refactor, report, projects, scan, validate
 from cloudshift.presentation.api.schemas import ErrorResponse
 from cloudshift.presentation.api.websocket import router as ws_router
 
@@ -65,6 +65,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(scan.router, dependencies=protected_deps)
     app.include_router(plan.router, dependencies=protected_deps)
     app.include_router(apply.router, dependencies=protected_deps)
+    app.include_router(refactor.router, dependencies=protected_deps)
+    app.include_router(manifest_router.router, dependencies=protected_deps)
     app.include_router(validate.router, dependencies=protected_deps)
     app.include_router(patterns.router, dependencies=protected_deps)
     app.include_router(report.router, dependencies=protected_deps)

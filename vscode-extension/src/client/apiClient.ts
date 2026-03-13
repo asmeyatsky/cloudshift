@@ -180,12 +180,50 @@ export class ApiClient {
     }
   }
 
+  /**
+   * Start a project scan (async job), poll until complete, then return one ScanResult per file.
+   * Pattern matches are not included; use scanFile() per file if you need patterns.
+   */
   async scanProject(
     rootPath: string,
+    options?: { sourceProvider?: string; targetProvider?: string },
   ): Promise<ScanResult[]> {
-    return this.request<ScanResult[]>("POST", "/api/scan", {
-      rootPath,
+    const source = options?.sourceProvider ?? "AWS";
+    const target = options?.targetProvider ?? "GCP";
+    const accepted = await this.request<{ job_id: string }>("POST", "/api/scan", {
+      root_path: rootPath,
+      source_provider: source,
+      target_provider: target,
     });
+    const jobId = accepted.job_id;
+    const pollMs = 2000;
+    const maxAttempts = 150; // 5 min
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const res = await this.request<{
+          error?: string;
+          files?: { path?: string }[];
+          project_id?: string;
+        }>("GET", `/api/scan/${jobId}`);
+        if (res.error) {
+          throw new CloudShiftApiError(res.error);
+        }
+        if (res.files !== undefined) {
+          return (res.files || []).map((f) => ({
+            file: f.path ?? "",
+            patterns: [],
+          }));
+        }
+      } catch (err) {
+        if (err instanceof CloudShiftApiError && err.statusCode === 404) {
+          await new Promise((r) => setTimeout(r, pollMs));
+          continue;
+        }
+        throw err;
+      }
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+    throw new CloudShiftApiError("Scan timed out (5 min)");
   }
 
   async scanFile(filePath: string, content: string): Promise<ScanResult> {
@@ -220,13 +258,16 @@ export class ApiClient {
   }
 
   async validate(filePath: string, content: string): Promise<ValidationResult> {
-    return this.request<ValidationResult>("POST", "/api/validate", {
+    return this.request<ValidationResult>("POST", "/api/validate/file", {
       filePath,
       content,
     });
   }
 
-  async getManifest(): Promise<ManifestEntry[]> {
-    return this.request<ManifestEntry[]>("GET", "/api/manifest");
+  async getManifest(projectId?: string): Promise<ManifestEntry[]> {
+    const path = projectId
+      ? `/api/manifest?project_id=${encodeURIComponent(projectId)}`
+      : "/api/manifest";
+    return this.request<ManifestEntry[]>("GET", path);
   }
 }
