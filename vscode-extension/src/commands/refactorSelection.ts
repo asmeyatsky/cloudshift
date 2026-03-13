@@ -61,6 +61,18 @@ function runRefactorSelection(
             result.refactoredContent,
           );
 
+          const output = vscode.window.createOutputChannel("CloudShift");
+          output.appendLine(`--- Refactored selection (${label}) ${vscode.workspace.asRelativePath(filePath)} ---`);
+          output.appendLine(result.refactoredContent);
+          output.appendLine("");
+          output.show(true);
+
+          const doc = await vscode.workspace.openTextDocument({
+            content: result.refactoredContent,
+            language: document.languageId,
+          });
+          await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preview: false });
+
           await vscode.commands.executeCommand(
             "vscode.diff",
             originalUri,
@@ -69,9 +81,11 @@ function runRefactorSelection(
           );
 
           const applyAction = "Apply Changes";
+          const openInEditorAction = "Open refactored in editor";
           const choice = await vscode.window.showInformationMessage(
-            `CloudShift found ${result.changes.length} change(s) in the selected region.`,
+            `CloudShift found ${result.changes.length} change(s). Refactored code is in the editor tab and CloudShift output panel.`,
             applyAction,
+            openInEditorAction,
             "Dismiss",
           );
 
@@ -89,6 +103,12 @@ function runRefactorSelection(
             vscode.window.showInformationMessage(
               "CloudShift: Refactoring applied.",
             );
+          } else if (choice === openInEditorAction) {
+            const refactorDoc = await vscode.workspace.openTextDocument({
+              content: result.refactoredContent,
+              language: document.languageId,
+            });
+            await vscode.window.showTextDocument(refactorDoc, { viewColumn: vscode.ViewColumn.Beside });
           }
         } catch (err) {
           if (err instanceof CloudShiftApiError) {

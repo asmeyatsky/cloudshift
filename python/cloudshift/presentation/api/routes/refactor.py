@@ -219,7 +219,7 @@ async def refactor_file(
                 logger.warning("Refactor file: no pattern match and LLM not configured (llm=%s)", llm_type)
                 raise HTTPException(
                     status_code=503,
-                    detail=f"No pattern matched and LLM is not configured (server llm={llm_type}). Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns. Get a key at https://aistudio.google.com/apikey",
+                    detail=f"No pattern matched and LLM is not configured (server llm={llm_type}). Fix: GitHub repo → Settings → Secrets → Actions: set GEMINI_API_KEY, then push to main to redeploy. Or set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server. Get a key at https://aistudio.google.com/apikey",
                 )
             if refactored == body.content and _is_llm_configured(container):
                 logger.info("Refactor file: LLM configured but no changes produced (returning 200)")
@@ -285,7 +285,7 @@ async def refactor_selection(
             logger.warning("Refactor selection: no pattern match and LLM not configured (llm=%s)", llm_type)
             raise HTTPException(
                 status_code=503,
-                detail=f"No pattern matched and LLM is not configured (server llm={llm_type}). Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns. Get a key at https://aistudio.google.com/apikey",
+                detail=f"No pattern matched and LLM is not configured (server llm={llm_type}). Fix: GitHub repo → Settings → Secrets → Actions: set GEMINI_API_KEY, then push to main to redeploy. Or set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server. Get a key at https://aistudio.google.com/apikey",
             )
         if refactored_content == body.content and _is_llm_configured(container):
             logger.info("Refactor selection: LLM configured but no changes produced (returning 200)")

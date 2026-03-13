@@ -59,6 +59,15 @@ jobs:
           docker build -t "${IMAGE}" -f docker/Dockerfile .
           docker push "${IMAGE}"
 
+      # Require GEMINI_API_KEY so refactor never returns 503 (no-LLM)
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "::error::GEMINI_API_KEY secret is not set. Refactor will return 503. Add it in repo Settings → Secrets → Actions."
+            exit 1
+          fi
+          echo "GEMINI_API_KEY is set."
+
       # max-instances=1 so plan/scan/apply job results (in-memory + SQLite) are visible to polling GETs
       - name: Deploy to Cloud Run
         run: |

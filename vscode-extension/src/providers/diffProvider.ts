@@ -11,18 +11,16 @@ export class CloudShiftDiffProvider implements vscode.TextDocumentContentProvide
   constructor(private readonly workspaceState: vscode.Memento) {}
 
   provideTextDocumentContent(uri: vscode.Uri): string {
-    // The URI path contains the original file path
-    // Refactored content is stored in workspace state keyed by the file path
-    const filePath = uri.path;
-    const content = this.workspaceState.get<string>(
-      `cloudshift.refactored.${filePath}`,
-    );
-
-    if (content === undefined) {
-      return "// No refactored content available. Run a refactor command first.";
+    // Refactored content is stored in workspace state keyed by the file path.
+    // Try uri.path and uri.fsPath so we find it on all platforms.
+    const pathKeys = [uri.path, uri.fsPath].filter((p) => p && p.length > 0);
+    for (const filePath of pathKeys) {
+      const content = this.workspaceState.get<string>(
+        `cloudshift.refactored.${filePath}`,
+      );
+      if (content !== undefined) return content;
     }
-
-    return content;
+    return "// No refactored content available. Run a refactor command first.";
   }
 
   /**
