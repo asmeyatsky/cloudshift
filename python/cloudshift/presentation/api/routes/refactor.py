@@ -1,4 +1,4 @@
-"""Refactor routes for VS Code extension: POST /api/refactor/file, POST /api/refactor/selection.
+"""Refactor routes: POST /api/refactor/file, POST /api/refactor/selection, POST /api/refactor/project.
 
 Refactor flow: try pattern matching first; only use LLM when no pattern matches.
 """
@@ -6,10 +6,12 @@ Refactor flow: try pattern matching first; only use LLM when no pattern matches.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from starlette.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,7 @@ from cloudshift.domain.value_objects.types import CloudProvider, Language
 from cloudshift.presentation.api.dependencies import get_container
 from cloudshift.presentation.api.schemas import (
     RefactorFileRequestBody,
+    RefactorProjectRequestBody,
     RefactorResultResponse,
     RefactorSelectionRequestBody,
     RefactorChangeResponse,
@@ -303,3 +306,139 @@ async def refactor_selection(
             status_code=500,
             detail=f"Refactor failed: {str(e)[:500]}",
         ) from e
+
+
+# ---------------------------------------------------------------------------
+# Project-wide streaming refactor
+# ---------------------------------------------------------------------------
+
+_SCANNABLE_EXTENSIONS = frozenset(
+    {"py", "ts", "tsx", "js", "jsx", "tf", "hcl", "json", "yml", "yaml", "bicep"}
+)
+
+
+async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
+    """Async generator yielding NDJSON events for project-wide refactor."""
+    # Resolve root_path from project_id or body.root_path
+    root_path = body.root_path
+    if not root_path:
+        repo = getattr(container, "project_repository", None)
+        if repo is None:
+            yield json.dumps({"type": "error", "message": "No project repository configured"}) + "\n"
+            return
+        project = repo.get(body.project_id)
+        if project is None:
+            yield json.dumps({"type": "error", "message": f"Project {body.project_id} not found"}) + "\n"
+            return
+        root_path = str(project.root_path)
+
+    root = Path(root_path)
+    if not root.is_dir():
+        yield json.dumps({"type": "error", "message": f"Directory not found: {root_path}"}) + "\n"
+        return
+
+    # Walk directory for scannable files
+    walker = getattr(container, "walker", None)
+    if walker is not None:
+        try:
+            all_files = walker.walk_directory(str(root))
+        except Exception:
+            all_files = [str(p) for p in root.rglob("*") if p.is_file()]
+    else:
+        all_files = [str(p) for p in root.rglob("*") if p.is_file()]
+
+    scannable = [
+        f for f in all_files
+        if Path(f).suffix.lstrip(".").lower() in _SCANNABLE_EXTENSIONS
+    ]
+    total = len(scannable)
+
+    if total == 0:
+        yield json.dumps({"type": "complete", "total": 0, "changed": 0, "pattern_count": 0, "llm_count": 0, "skipped": 0, "llm_configured": _is_llm_configured(container)}) + "\n"
+        return
+
+    changed_count = 0
+    pattern_count = 0
+    llm_count = 0
+    skipped_count = 0
+
+    for idx, file_path in enumerate(scannable):
+        rel_path = str(Path(file_path).relative_to(root)) if file_path.startswith(str(root)) else file_path
+
+        yield json.dumps({"type": "progress", "file": rel_path, "index": idx, "total": total}) + "\n"
+
+        try:
+            content = Path(file_path).read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            logger.debug("Skipping unreadable file %s: %s", file_path, exc)
+            skipped_count += 1
+            yield json.dumps({"type": "file_result", "file": rel_path, "changed": False, "method": "skipped"}) + "\n"
+            continue
+
+        method = "skipped"
+        modified = None
+
+        # Try pattern-based refactor
+        try:
+            modified = await _refactor_with_patterns(
+                content, file_path, body.source_provider, body.target_provider, container,
+            )
+            if modified is not None:
+                method = "pattern"
+        except Exception as exc:
+            logger.debug("Pattern refactor error for %s: %s", file_path, exc)
+
+        # LLM fallback
+        if modified is None and _is_llm_configured(container):
+            try:
+                llm_result = await _refactor_with_llm(
+                    content, file_path, body.source_provider, body.target_provider, container,
+                )
+                if llm_result != content:
+                    modified = llm_result
+                    method = "llm"
+            except Exception as exc:
+                logger.debug("LLM refactor error for %s: %s", file_path, exc)
+
+        if modified is not None and modified != content:
+            changed_count += 1
+            if method == "pattern":
+                pattern_count += 1
+            elif method == "llm":
+                llm_count += 1
+            yield json.dumps({
+                "type": "file_result",
+                "file": rel_path,
+                "original": content,
+                "modified": modified,
+                "changed": True,
+                "method": method,
+            }) + "\n"
+        else:
+            skipped_count += 1
+            yield json.dumps({"type": "file_result", "file": rel_path, "changed": False, "method": "skipped"}) + "\n"
+
+        # Yield control so the event loop stays responsive
+        await asyncio.sleep(0)
+
+    yield json.dumps({
+        "type": "complete",
+        "total": total,
+        "changed": changed_count,
+        "pattern_count": pattern_count,
+        "llm_count": llm_count,
+        "skipped": skipped_count,
+        "llm_configured": _is_llm_configured(container),
+    }) + "\n"
+
+
+@router.post("/project", summary="Refactor entire project (streaming NDJSON)")
+async def refactor_project(
+    body: RefactorProjectRequestBody,
+    container=Depends(get_container),
+):
+    """Stream project-wide refactor results as NDJSON. Each line is a JSON object."""
+    return StreamingResponse(
+        _refactor_project_stream(body, container),
+        media_type="application/x-ndjson",
+    )

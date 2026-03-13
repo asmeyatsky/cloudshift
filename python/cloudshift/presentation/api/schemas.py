@@ -397,6 +397,15 @@ class ConfigUpdateBody(BaseModel):
 # Refactor (VS Code surgical refactor)
 # ---------------------------------------------------------------------------
 
+class RefactorProjectRequestBody(BaseModel):
+    """Request body for POST /api/refactor/project (streaming NDJSON)."""
+
+    project_id: str
+    source_provider: str = Field(default="AWS")
+    target_provider: str = Field(default="GCP")
+    root_path: str | None = Field(default=None)
+
+
 class RefactorFileRequestBody(BaseModel):
     file_path: str = Field(alias="filePath")
     content: str

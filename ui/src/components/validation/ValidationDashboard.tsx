@@ -37,13 +37,13 @@ export default function ValidationDashboard({
         <button
           onClick={onRunValidation}
           disabled={loading || !hasPlanId}
-          title={!hasPlanId ? "Run Plan first to get a plan ID for validation" : undefined}
+          title={!hasPlanId ? "Import or select a project first" : undefined}
           className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-primary-600 to-primary-500 px-4 py-2 text-sm font-medium text-white transition-all hover:shadow-lg hover:shadow-primary-500/20 disabled:opacity-50"
         >
           <RefreshCw
             className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
           />
-          {loading ? "Validating..." : !hasPlanId ? "Run Plan first" : "Run Validation"}
+          {loading ? "Validating..." : !hasPlanId ? "No project selected" : "Run Validation"}
         </button>
       </div>
 

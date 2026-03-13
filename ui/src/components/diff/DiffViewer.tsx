@@ -32,7 +32,7 @@ export default function DiffViewer({ diffs, sourceLabel = "Original", targetLabe
       <div className="flex flex-col items-center justify-center rounded-xl border border-white/[0.06] bg-surface-100 py-16 text-gray-600">
         <FileCode className="mb-3 h-10 w-10" />
         <p className="text-sm text-gray-400">No diffs to display.</p>
-        <p className="text-xs">Run the pipeline (Scan → Plan → Apply) to see AWS/Azure code refactored to GCP.</p>
+        <p className="text-xs">Click Refactor on the Dashboard to see AWS/Azure code refactored to GCP.</p>
       </div>
     );
   }

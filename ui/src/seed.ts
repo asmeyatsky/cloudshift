@@ -640,7 +640,29 @@ def main(cloud_event: functions_v2.CloudEvent) -> None:
 ];
 
 /* ------------------------------------------------------------------ */
-/*  Apply result                                                       */
+/*  Refactor summaries (new model)                                     */
+/* ------------------------------------------------------------------ */
+
+export const SEED_REFACTOR_SUMMARY = {
+  total: 12,
+  changed: 8,
+  patternCount: 6,
+  llmCount: 2,
+  skipped: 4,
+  llmConfigured: true,
+};
+
+export const SEED_REFACTOR_SUMMARY_AZURE = {
+  total: 3,
+  changed: 1,
+  patternCount: 0,
+  llmCount: 1,
+  skipped: 2,
+  llmConfigured: true,
+};
+
+/* ------------------------------------------------------------------ */
+/*  Apply result (legacy, kept for backward compat)                    */
 /* ------------------------------------------------------------------ */
 
 export const SEED_APPLY_RESULT: ApplyResult = {

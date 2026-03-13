@@ -190,6 +190,26 @@ export const patternsApi = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Refactor (project-wide streaming)                                  */
+/* ------------------------------------------------------------------ */
+
+export const refactorApi = {
+  /** Start a streaming project refactor. Returns raw Response for NDJSON reading. */
+  startProject: (body: {
+    project_id: string;
+    source_provider: string;
+    target_provider: string;
+    root_path?: string;
+  }, signal?: AbortSignal) =>
+    fetch(BASE + "/refactor/project", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(body),
+      signal,
+    }),
+};
+
+/* ------------------------------------------------------------------ */
 /*  Report endpoints                                                   */
 /* ------------------------------------------------------------------ */
 

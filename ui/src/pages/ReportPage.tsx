@@ -5,9 +5,8 @@ import { useProjectStore, useManifestStore, useOperationStore, useValidationStor
 export default function ReportPage() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const entries = useManifestStore((s) => s.entries);
-  const scanResult = useOperationStore((s) => s.scanResult);
-  const planResult = useOperationStore((s) => s.planResult);
-  const applyResult = useOperationStore((s) => s.applyResult);
+  const diffs = useOperationStore((s) => s.diffs);
+  const refactorSummary = useOperationStore((s) => s.refactorSummary);
   const validationResult = useValidationStore((s) => s.result);
 
   const [loading, setLoading] = useState(false);
@@ -42,6 +41,23 @@ export default function ReportPage() {
       )
       .join("");
 
+    const resourceRows = Object.entries(resourceCounts)
+      .map(
+        ([type, count]) =>
+          `<tr><td style="padding:4px 0;color:#888;">${type}</td><td style="color:#fff;font-weight:600;">${count}</td></tr>`,
+      )
+      .join("");
+
+    const statusRows = Object.entries(statusCounts)
+      .map(
+        ([status, count]) =>
+          `<tr><td style="padding:4px 0;color:#888;text-transform:capitalize;">${status}</td><td style="color:#fff;font-weight:600;">${count} (${Math.round((count / entries.length) * 100)}%)</td></tr>`,
+      )
+      .join("");
+
+    const valColor = validationResult?.passed ? "#50fa7b" : "#ff5555";
+    const valText = validationResult?.passed ? "Yes" : validationResult ? "No" : "\u2014";
+
     const html = `
       <div style="font-family:system-ui,sans-serif;color:#e0e0e0;">
         <h2 style="color:#fff;margin-bottom:4px;">Migration Audit Report</h2>
@@ -53,35 +69,27 @@ export default function ReportPage() {
           &mdash; Generated ${new Date().toLocaleString()}
         </p>
 
-        <h3 style="color:#bd93f9;margin-top:24px;">Pipeline Summary</h3>
+        <h3 style="color:#bd93f9;margin-top:24px;">Refactor Summary</h3>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          <tr><td style="padding:6px 0;color:#888;">Files Scanned</td><td style="color:#fff;font-weight:600;">${scanResult?.filesScanned ?? scanResult?.total_files_scanned ?? "—"}</td></tr>
-          <tr><td style="padding:6px 0;color:#888;">Resources Discovered</td><td style="color:#fff;font-weight:600;">${Array.isArray(scanResult?.resourcesFound) ? scanResult.resourcesFound.length : (scanResult?.services_found?.length ?? "—")}</td></tr>
-          <tr><td style="padding:6px 0;color:#888;">Transformations Planned</td><td style="color:#fff;font-weight:600;">${planResult?.estimatedChanges ?? "—"}</td></tr>
-          <tr><td style="padding:6px 0;color:#888;">Files Modified</td><td style="color:#fff;font-weight:600;">${applyResult?.filesModified ?? "—"}</td></tr>
-          <tr><td style="padding:6px 0;color:#888;">Validation Issues</td><td style="color:#fff;font-weight:600;">${validationResult?.summary.totalIssues ?? "—"}</td></tr>
-          <tr><td style="padding:6px 0;color:#888;">Validation Passed</td><td style="font-weight:600;color:${validationResult?.passed ? "#50fa7b" : "#ff5555"};">${validationResult?.passed ? "Yes" : "No"}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;">Files Processed</td><td style="color:#fff;font-weight:600;">${refactorSummary?.total ?? "\u2014"}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;">Files Changed</td><td style="color:#fff;font-weight:600;">${diffs.length || (refactorSummary?.changed ?? "\u2014")}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;">Via Patterns</td><td style="color:#fff;font-weight:600;">${refactorSummary?.patternCount ?? "\u2014"}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;">Via LLM</td><td style="color:#fff;font-weight:600;">${refactorSummary?.llmCount ?? "\u2014"}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;">Skipped</td><td style="color:#fff;font-weight:600;">${refactorSummary?.skipped ?? "\u2014"}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;">Validation Issues</td><td style="color:#fff;font-weight:600;">${validationResult?.summary.totalIssues ?? "\u2014"}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;">Validation Passed</td><td style="font-weight:600;color:${valColor};">${valText}</td></tr>
         </table>
 
+        ${entries.length > 0 ? `
         <h3 style="color:#bd93f9;margin-top:24px;">Resource Breakdown</h3>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          ${Object.entries(resourceCounts)
-            .map(
-              ([type, count]) =>
-                `<tr><td style="padding:4px 0;color:#888;">${type}</td><td style="color:#fff;font-weight:600;">${count}</td></tr>`,
-            )
-            .join("")}
+          ${resourceRows}
         </table>
 
         <h3 style="color:#bd93f9;margin-top:24px;">Entry Status</h3>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          ${Object.entries(statusCounts)
-            .map(
-              ([status, count]) =>
-                `<tr><td style="padding:4px 0;color:#888;text-transform:capitalize;">${status}</td><td style="color:#fff;font-weight:600;">${count} (${Math.round((count / entries.length) * 100)}%)</td></tr>`,
-            )
-            .join("")}
-        </table>
+          ${statusRows}
+        </table>` : ""}
 
         ${
           validationResult && validationResult.issues.length > 0
@@ -103,7 +111,7 @@ export default function ReportPage() {
 
     setReportHtml(html);
     setLoading(false);
-  }, [activeProject, entries, scanResult, planResult, applyResult, validationResult]);
+  }, [activeProject, entries, diffs, refactorSummary, validationResult]);
 
   return (
     <div className="p-8">

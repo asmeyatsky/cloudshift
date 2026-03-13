@@ -149,8 +149,23 @@ export const usePatternsStore = create<PatternsState>((set) => ({
 }));
 
 /* ------------------------------------------------------------------ */
-/*  Operation progress store (scan / plan / apply)                     */
+/*  Operation store (refactor progress, diffs, validation)             */
 /* ------------------------------------------------------------------ */
+
+interface RefactorProgress {
+  current: number;
+  total: number;
+  currentFile: string;
+}
+
+interface RefactorSummary {
+  total: number;
+  changed: number;
+  patternCount: number;
+  llmCount: number;
+  skipped: number;
+  llmConfigured: boolean;
+}
 
 interface OperationState {
   scanResult: ScanResult | null;
@@ -164,6 +179,8 @@ interface OperationState {
   pipelineAborted: boolean;
   /** When true, Dashboard auto-runs pipeline once (e.g. after importing from snippet). */
   runPipelineAfterSnippetImport: boolean;
+  refactorProgress: RefactorProgress | null;
+  refactorSummary: RefactorSummary | null;
   setScanResult: (r: ScanResult | null) => void;
   setPlanResult: (r: PlanResult | null) => void;
   setApplyResult: (r: ApplyResult | null) => void;
@@ -173,6 +190,8 @@ interface OperationState {
   setError: (error: string | null) => void;
   setPipelineAborted: (v: boolean) => void;
   setRunPipelineAfterSnippetImport: (v: boolean) => void;
+  setRefactorProgress: (p: RefactorProgress | null) => void;
+  setRefactorSummary: (s: RefactorSummary | null) => void;
   reset: () => void;
 }
 
@@ -186,6 +205,8 @@ export const useOperationStore = create<OperationState>((set) => ({
   error: null,
   pipelineAborted: false,
   runPipelineAfterSnippetImport: false,
+  refactorProgress: null,
+  refactorSummary: null,
   setScanResult: (scanResult) => set({ scanResult }),
   setPlanResult: (planResult) => set({ planResult }),
   setApplyResult: (applyResult) => set({ applyResult }),
@@ -195,6 +216,8 @@ export const useOperationStore = create<OperationState>((set) => ({
   setError: (error) => set({ error }),
   setPipelineAborted: (pipelineAborted) => set({ pipelineAborted }),
   setRunPipelineAfterSnippetImport: (runPipelineAfterSnippetImport) => set({ runPipelineAfterSnippetImport }),
+  setRefactorProgress: (refactorProgress) => set({ refactorProgress }),
+  setRefactorSummary: (refactorSummary) => set({ refactorSummary }),
   reset: () =>
     set({
       scanResult: null,
@@ -206,5 +229,7 @@ export const useOperationStore = create<OperationState>((set) => ({
       error: null,
       pipelineAborted: false,
       runPipelineAfterSnippetImport: false,
+      refactorProgress: null,
+      refactorSummary: null,
     }),
 }));

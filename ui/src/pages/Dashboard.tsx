@@ -1,9 +1,5 @@
-import { useCallback, useState, useRef, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
-  Scan,
-  Map,
-  Play,
-  ShieldCheck,
   AlertTriangle,
   CheckCircle2,
   Loader2,
@@ -16,6 +12,7 @@ import {
   Clock,
   Activity,
   RotateCcw,
+  ShieldCheck,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import {
@@ -24,34 +21,9 @@ import {
   useOperationStore,
   useValidationStore,
 } from "../store";
-import { useScan } from "../hooks/useScan";
-import { usePlan } from "../hooks/usePlan";
-import { useApply } from "../hooks/useApply";
+import { useRefactor } from "../hooks/useRefactor";
 import { useValidation } from "../hooks/useValidation";
-import PipelineTimer from "../components/PipelineTimer";
 import { scanApi, projectApi, type ScanEstimate } from "../services/api";
-
-type PipelineStep = "scan" | "plan" | "apply" | "validate";
-
-/** Estimated duration per step (seconds) for countdown. Repo size unknown so these are rough. */
-const STEP_ESTIMATE_SECONDS: Record<PipelineStep, number> = {
-  scan: 120,
-  plan: 600,
-  apply: 300,
-  validate: 120,
-};
-
-const STEPS: {
-  key: PipelineStep;
-  label: string;
-  icon: typeof Scan;
-  desc: string;
-}[] = [
-  { key: "scan", label: "Scan", icon: Scan, desc: "Discover AWS/Azure resources" },
-  { key: "plan", label: "Plan", icon: Map, desc: "Plan refactor to GCP" },
-  { key: "apply", label: "Apply", icon: Play, desc: "Convert code to GCP" },
-  { key: "validate", label: "Validate", icon: ShieldCheck, desc: "Verify GCP output" },
-];
 
 interface LogEntry {
   time: string;
@@ -75,32 +47,27 @@ export default function Dashboard() {
   const entries = useManifestStore((s) => s.entries);
   const setEntries = useManifestStore((s) => s.setEntries);
 
-  const scanResult = useOperationStore((s) => s.scanResult);
-  const planResult = useOperationStore((s) => s.planResult);
-  const applyResult = useOperationStore((s) => s.applyResult);
+  const diffs = useOperationStore((s) => s.diffs);
+  const running = useOperationStore((s) => s.running);
   const resetOps = useOperationStore((s) => s.reset);
-  const setPipelineAborted = useOperationStore((s) => s.setPipelineAborted);
+  const refactorProgress = useOperationStore((s) => s.refactorProgress);
+  const refactorSummary = useOperationStore((s) => s.refactorSummary);
   const runPipelineAfterSnippetImport = useOperationStore((s) => s.runPipelineAfterSnippetImport);
   const setRunPipelineAfterSnippetImport = useOperationStore((s) => s.setRunPipelineAfterSnippetImport);
 
   const validationResult = useValidationStore((s) => s.result);
   const setValidationResult = useValidationStore((s) => s.setResult);
 
-  const { startScan } = useScan();
-  const { createPlan } = usePlan();
-  const { startApply } = useApply();
+  const { startRefactor, cancelRefactor } = useRefactor();
   const { runValidation } = useValidation();
 
   const [activityLog, setActivityLog] = useState<LogEntry[]>([]);
-  const [runningStep, setRunningStep] = useState<PipelineStep | null>(null);
-  const [stepStartedAt, setStepStartedAt] = useState<number>(0);
-  const [pipelineRunning, setPipelineRunning] = useState(false);
   const [repoEstimate, setRepoEstimate] = useState<ScanEstimate | null>(null);
   const [repoEstimateLoading, setRepoEstimateLoading] = useState(false);
   const [repoEstimateError, setRepoEstimateError] = useState<string | null>(null);
   const [reimporting, setReimporting] = useState(false);
   const [showRunConfirm, setShowRunConfirm] = useState(false);
-  const abortRef = useRef(false);
+  const [validating, setValidating] = useState(false);
 
   const handleReimportFromGit = useCallback(async () => {
     if (!activeProject?.repoUrl) return;
@@ -168,132 +135,74 @@ export default function Dashboard() {
     [],
   );
 
-  const runPipeline = useCallback(async () => {
-    if (!activeProject || pipelineRunning) return;
-    abortRef.current = false;
-    setPipelineAborted(false);
-    setPipelineRunning(true);
-
-    // ── Scan ──
-    setRunningStep("scan");
-    setStepStartedAt(Date.now());
-    addLog(`Agent initiating project scan on ${activeProject.path}`, "agent");
-    
+  const runRefactor = useCallback(async () => {
+    if (!activeProject || running) return;
+    addLog(`Starting refactor on ${activeProject.path}`, "agent");
     try {
-      await startScan();
-      addLog("Scan completed successfully", "success");
-    } catch (e: any) {
-      addLog(`Scan failed: ${e.message || e}`, "warning");
-      setPipelineRunning(false);
-      setRunningStep(null);
-      return;
-    }
-    
-    if (abortRef.current) { setPipelineRunning(false); setRunningStep(null); return; }
-
-    // ── Plan ──
-    setRunningStep("plan");
-    setStepStartedAt(Date.now());
-    addLog("Generating transformation plan...", "agent");
-    try {
-      await createPlan();
-    } catch (e: any) {
-      addLog(`Plan failed: ${e.message || e}`, "warning");
-      setPipelineRunning(false);
-      setRunningStep(null);
-      return;
-    }
-    if (abortRef.current) { setPipelineRunning(false); setRunningStep(null); return; }
-    const planAfter = useOperationStore.getState().planResult;
-    if (planAfter) {
-      if (planAfter.estimatedChanges > 0) {
-        addLog(`Plan ready: ${planAfter.estimatedChanges} changes queued`, "success");
-      } else {
-        const isSnippet = activeProject?.path?.includes("snippets");
+      await startRefactor();
+      const summary = useOperationStore.getState().refactorSummary;
+      if (summary) {
         addLog(
-          isSnippet
-            ? "Plan finished with no pattern matches for this snippet. Apply will still run and may produce a GCP version if the server has an LLM configured."
-            : "Plan finished but no transformations found (0 changes). Use a project with AWS/Azure code or try AWS Demo / Azure Demo.",
-          "warning"
+          `Refactor complete: ${summary.changed} file(s) changed (${summary.patternCount} via patterns, ${summary.llmCount} via LLM, ${summary.skipped} skipped)`,
+          summary.changed > 0 ? "success" : "warning",
         );
-      }
-    }
-
-    // ── Apply ──
-    setRunningStep("apply");
-    setStepStartedAt(Date.now());
-    addLog("Applying transformations...", "agent");
-    try {
-      await startApply();
-    } catch (e: any) {
-      addLog(`Apply failed: ${e.message || e}`, "warning");
-      setPipelineRunning(false);
-      setRunningStep(null);
-      return;
-    }
-    if (abortRef.current) { setPipelineRunning(false); setRunningStep(null); return; }
-    const applyAfter = useOperationStore.getState().applyResult;
-    if (applyAfter) {
-      addLog(`${applyAfter.filesModified} file(s) converted to GCP`, "success");
-    }
-
-    // ── Validate ──
-    setRunningStep("validate");
-    setStepStartedAt(Date.now());
-    addLog("Running validation checks...", "agent");
-    const planIdForValidate = useOperationStore.getState().planResult?.id;
-    if (planIdForValidate) {
-      try {
-        await runValidation(planIdForValidate);
-        const valAfter = useValidationStore.getState().result;
-        if (valAfter) {
-          addLog(`Validation complete. Passed: ${valAfter.passed}. Issues: ${valAfter.summary.totalIssues}`, valAfter.passed ? "success" : "warning");
-          if (!valAfter.passed && valAfter.issues?.length > 0) {
-            valAfter.issues.slice(0, 5).forEach((issue) => {
-              addLog(`  • ${issue.message}`, "warning");
-            });
-            if (valAfter.issues.length > 5) {
-              addLog(`  … and ${valAfter.issues.length - 5} more (see Validation page)`, "warning");
-            }
-          }
+        if (summary.changed === 0 && !summary.llmConfigured) {
+          addLog("No LLM configured. Set GEMINI_API_KEY on the server for LLM fallback.", "warning");
         }
-      } catch (e: any) {
-        addLog(`Validation failed: ${e.message || e}`, "warning");
+      } else {
+        addLog("Refactor complete", "success");
       }
-    } else {
-      addLog("No plan ID available for validation", "warning");
+    } catch (e: any) {
+      addLog(`Refactor failed: ${e.message || e}`, "warning");
     }
+  }, [activeProject, running, startRefactor, addLog]);
 
-    setRunningStep(null);
-    setPipelineRunning(false);
-  }, [activeProject, pipelineRunning, addLog, createPlan, startApply, runValidation]);
-
+  // Auto-run after snippet import
   useEffect(() => {
     if (!runPipelineAfterSnippetImport || !activeProject) return;
     setRunPipelineAfterSnippetImport(false);
-    runPipeline();
-  }, [runPipelineAfterSnippetImport, activeProject?.id, setRunPipelineAfterSnippetImport, runPipeline]);
+    runRefactor();
+  }, [runPipelineAfterSnippetImport, activeProject?.id, setRunPipelineAfterSnippetImport, runRefactor]);
+
+  const handleValidate = useCallback(async () => {
+    if (!activeProject || validating) return;
+    setValidating(true);
+    addLog("Running validation checks...", "agent");
+    try {
+      await runValidation(activeProject.id);
+      const valAfter = useValidationStore.getState().result;
+      if (valAfter) {
+        addLog(
+          `Validation complete. Passed: ${valAfter.passed}. Issues: ${valAfter.summary.totalIssues}`,
+          valAfter.passed ? "success" : "warning",
+        );
+        if (!valAfter.passed && valAfter.issues?.length > 0) {
+          valAfter.issues.slice(0, 5).forEach((issue) => {
+            addLog(`  \u2022 ${issue.message}`, "warning");
+          });
+          if (valAfter.issues.length > 5) {
+            addLog(`  \u2026 and ${valAfter.issues.length - 5} more (see Validation page)`, "warning");
+          }
+        }
+      }
+    } catch (e: any) {
+      addLog(`Validation failed: ${e.message || e}`, "warning");
+    } finally {
+      setValidating(false);
+    }
+  }, [activeProject, validating, runValidation, addLog]);
 
   const handleReset = useCallback(() => {
-    abortRef.current = true;
-    setPipelineAborted(true);
-    setPipelineRunning(false);
-    setRunningStep(null);
+    cancelRefactor();
     resetOps();
     setValidationResult(null);
     setEntries([]);
     setActivityLog([]);
-    addLog("Pipeline reset. Ready to run.", "agent");
-  }, [setPipelineAborted, resetOps, setValidationResult, setEntries, addLog]);
+    addLog("Reset. Ready to refactor.", "agent");
+  }, [cancelRefactor, resetOps, setValidationResult, setEntries, addLog]);
 
-  const getStepStatus = (step: PipelineStep): "idle" | "running" | "done" => {
-    if (runningStep === step) return "running";
-    if (step === "scan") return scanResult ? "done" : "idle";
-    if (step === "plan") return planResult ? "done" : "idle";
-    if (step === "apply") return applyResult ? "done" : "idle";
-    if (step === "validate") return validationResult ? "done" : "idle";
-    return "idle";
-  };
+  // Derive status for progress display
+  const isDone = !running && refactorSummary != null;
 
   return (
     <div className="flex min-h-full flex-col p-8 lg:p-10">
@@ -305,7 +214,7 @@ export default function Dashboard() {
           </div>
           <div>
             <h1 className="text-3xl font-bold text-white">
-              Migration Pipeline
+              Refactor
             </h1>
             <p className="mt-1 text-base text-gray-500">
               {activeProject ? (
@@ -330,7 +239,7 @@ export default function Dashboard() {
             {activeProject && (repoEstimateLoading || repoEstimate || repoEstimateError) && (
               <p className="mt-2 text-sm text-gray-600">
                 {repoEstimateLoading ? (
-                  "Estimating repo size…"
+                  "Estimating repo size\u2026"
                 ) : repoEstimateError ? (
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="text-amber-400/90">{repoEstimateError}</span>
@@ -341,7 +250,7 @@ export default function Dashboard() {
                         disabled={reimporting}
                         className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
                       >
-                        {reimporting ? "Re-importing…" : "Re-import repository"}
+                        {reimporting ? "Re-importing\u2026" : "Re-import repository"}
                       </button>
                     )}
                   </span>
@@ -353,10 +262,7 @@ export default function Dashboard() {
                         <> ({repoEstimate.scannable_files.toLocaleString()} scannable)</>
                       )}
                       {repoEstimate.scannable_files === 0 && repoEstimate.total_files === 0 && (
-                        <span className="text-amber-400/90"> No files found. Path may not exist on the server—import from Git or use a path that exists where the backend runs.</span>
-                      )}
-                      {repoEstimate.scannable_files > 0 && (
-                        <>. Est. plan: ~{repoEstimate.estimated_plan_minutes} min.</>
+                        <span className="text-amber-400/90"> No files found. Path may not exist on the server\u2014import from Git or use a path that exists where the backend runs.</span>
                       )}
                     </span>
                     {repoEstimate.message && repoEstimate.scannable_files > 0 && (
@@ -380,7 +286,7 @@ export default function Dashboard() {
                     {repoEstimate.message && ` ${repoEstimate.message}`}
                   </p>
                   <p className="mt-1 text-sm text-gray-500">
-                    Planning may take {Math.round(repoEstimate.estimated_plan_minutes)}–{Math.round(repoEstimate.estimated_plan_minutes * 1.5)} minutes. You can Cancel anytime.
+                    Refactoring may take a few minutes. You can Cancel anytime.
                   </p>
                   <div className="mt-6 flex justify-end gap-3">
                     <button
@@ -392,25 +298,33 @@ export default function Dashboard() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setShowRunConfirm(false); runPipeline(); }}
+                      onClick={() => { setShowRunConfirm(false); runRefactor(); }}
                       className="rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-500"
                     >
-                      Run pipeline
+                      Refactor
                     </button>
                   </div>
                 </div>
               </div>
             )}
-            {pipelineRunning && (
+            {running && (
               <button
-                onClick={handleReset}
+                onClick={() => { cancelRefactor(); addLog("Refactor cancelled", "warning"); }}
                 className="flex items-center gap-2 rounded-xl border border-amber-500/30 px-5 py-3 text-base font-medium text-amber-400 transition-all hover:bg-amber-500/10 hover:text-amber-300"
               >
                 Cancel
               </button>
             )}
-            {(scanResult || applyResult || validationResult) &&
-              !pipelineRunning && (
+            {isDone && (
+              <>
+                <button
+                  onClick={handleValidate}
+                  disabled={validating}
+                  className="flex items-center gap-2 rounded-xl border border-white/[0.08] px-5 py-3 text-base font-medium text-gray-400 transition-all hover:bg-white/[0.04] hover:text-gray-200 disabled:opacity-40"
+                >
+                  {validating ? <Loader2 className="h-5 w-5 animate-spin" /> : <ShieldCheck className="h-5 w-5" />}
+                  Validate
+                </button>
                 <button
                   onClick={handleReset}
                   className="flex items-center gap-2 rounded-xl border border-white/[0.08] px-5 py-3 text-base font-medium text-gray-400 transition-all hover:bg-white/[0.04] hover:text-gray-200"
@@ -418,25 +332,26 @@ export default function Dashboard() {
                   <RotateCcw className="h-5 w-5" />
                   Reset
                 </button>
-              )}
+              </>
+            )}
             <button
               onClick={() => {
-                if (pipelineRunning) return;
+                if (running) return;
                 if (repoEstimate && repoEstimate.scannable_files > 200) {
                   setShowRunConfirm(true);
                 } else {
-                  runPipeline();
+                  runRefactor();
                 }
               }}
-              disabled={pipelineRunning}
+              disabled={running}
               className="group flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-accent-purple px-6 py-3 text-base font-semibold text-white shadow-lg shadow-primary-500/20 transition-all hover:shadow-primary-500/30 disabled:opacity-40 disabled:shadow-none"
             >
-              {pipelineRunning ? (
+              {running ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
                 <Zap className="h-5 w-5 transition-transform group-hover:scale-110" />
               )}
-              {pipelineRunning ? "Running..." : "Run Pipeline"}
+              {running ? "Refactoring..." : "Refactor"}
             </button>
           </div>
         )}
@@ -462,14 +377,14 @@ export default function Dashboard() {
 
       {activeProject && (
         <div className="flex flex-1 flex-col">
-          {/* Pipeline Steps */}
+          {/* Refactor Progress */}
           <div className="mb-8 rounded-2xl border border-white/[0.06] bg-surface-50 p-6">
             <div className="mb-5 flex items-center gap-2.5">
               <Activity className="h-5 w-5 text-primary-400/70" />
               <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
-                Agent Pipeline
+                Refactor Status
               </h2>
-              {pipelineRunning && (
+              {running && (
                 <span className="ml-auto flex items-center gap-2 rounded-full bg-primary-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-primary-400">
                   <span className="relative flex h-2 w-2">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-400 opacity-40" />
@@ -480,76 +395,75 @@ export default function Dashboard() {
               )}
             </div>
 
-            <div className="grid grid-cols-4 gap-4">
-              {STEPS.filter(Boolean).map((step, idx) => {
-                if (!step?.icon) return null;
-                const status = getStepStatus(step.key);
-                const Icon = step.icon;
+            {/* Idle state */}
+            {!running && !refactorSummary && (
+              <div className="flex items-center gap-4 rounded-xl border border-white/[0.03] bg-surface-100/50 p-5">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.04] text-gray-600">
+                  <Zap className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-gray-300">Ready to refactor</p>
+                  <p className="text-sm text-gray-600">Click Refactor to convert {activeProject.sourceProvider.toUpperCase()} code to GCP</p>
+                </div>
+              </div>
+            )}
 
-                return (
-                  <div
-                    key={step.key}
-                    className={`group relative rounded-xl border p-5 text-left transition-all ${
-                      status === "running"
-                        ? "border-primary-500/25 bg-primary-500/[0.06] animate-shimmer"
-                        : status === "done"
-                          ? "border-accent-green/15 bg-accent-green/[0.04]"
-                          : "border-white/[0.03] bg-surface-100/50 opacity-40"
-                    }`}
-                  >
-                    {idx < STEPS.length - 1 && (
-                      <div className="absolute -right-2 top-1/2 z-10 -translate-y-1/2">
-                        <ChevronRight
-                          className={`h-4 w-4 ${status === "done" ? "text-accent-green/30" : "text-white/[0.08]"}`}
-                        />
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${
-                          status === "running"
-                            ? "bg-primary-500/15 text-primary-400"
-                            : status === "done"
-                              ? "bg-accent-green/15 text-accent-green"
-                              : "bg-white/[0.04] text-gray-600"
-                        }`}
-                      >
-                        {status === "running" ? (
-                          <Loader2 className="h-6 w-6 animate-spin" />
-                        ) : status === "done" ? (
-                          <CheckCircle2 className="h-6 w-6" />
-                        ) : (
-                          <Icon className="h-6 w-6" />
-                        )}
-                      </div>
-                      <div>
-                        <p
-                          className={`text-lg font-semibold ${
-                            status === "running"
-                              ? "text-primary-300"
-                              : status === "done"
-                                ? "text-accent-green"
-                                : "text-gray-300"
-                          }`}
-                        >
-                          {step.label}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {step.desc}
-                        </p>
-                      </div>
-                    </div>
-
-                    {status === "running" && (
-                      <div className="mt-4 h-1 w-full overflow-hidden rounded-full bg-surface-300">
-                        <div className="h-full w-1/4 rounded-full bg-gradient-to-r from-primary-500 to-accent-purple animate-scan" />
-                      </div>
-                    )}
+            {/* Running state */}
+            {running && refactorProgress && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-4 rounded-xl border border-primary-500/25 bg-primary-500/[0.06] p-5">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-500/15 text-primary-400">
+                    <Loader2 className="h-6 w-6 animate-spin" />
                   </div>
-                );
-              })}
-            </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-lg font-semibold text-primary-300">
+                      Refactoring file {refactorProgress.current} of {refactorProgress.total}
+                    </p>
+                    <p className="truncate text-sm text-gray-500">{refactorProgress.currentFile}</p>
+                  </div>
+                  <span className="text-sm font-medium text-primary-400">
+                    {diffs.length} changed
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-300">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-purple transition-all duration-300"
+                    style={{ width: `${Math.round((refactorProgress.current / refactorProgress.total) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Running but no progress yet (initial loading) */}
+            {running && !refactorProgress && (
+              <div className="flex items-center gap-4 rounded-xl border border-primary-500/25 bg-primary-500/[0.06] p-5">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-500/15 text-primary-400">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-primary-300">Starting refactor...</p>
+                  <p className="text-sm text-gray-500">Walking project files</p>
+                </div>
+              </div>
+            )}
+
+            {/* Done state */}
+            {isDone && refactorSummary && (
+              <div className="flex items-center gap-4 rounded-xl border border-accent-green/15 bg-accent-green/[0.04] p-5">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-green/15 text-accent-green">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-accent-green">Refactor complete</p>
+                  <p className="text-sm text-gray-500">
+                    {refactorSummary.changed} file(s) changed out of {refactorSummary.total}
+                    {refactorSummary.patternCount > 0 && <> &middot; {refactorSummary.patternCount} via patterns</>}
+                    {refactorSummary.llmCount > 0 && <> &middot; {refactorSummary.llmCount} via LLM</>}
+                    {!refactorSummary.llmConfigured && <> &middot; <span className="text-amber-400/80">LLM not configured</span></>}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid flex-1 grid-cols-1 gap-8 lg:grid-cols-3">
@@ -561,15 +475,15 @@ export default function Dashboard() {
               </h3>
               <StatCard
                 icon={<FileText className="h-6 w-6 text-primary-400" />}
-                label="Files Scanned"
-                value={scanResult?.filesScanned ?? scanResult?.total_files_scanned ?? 0}
+                label="Files Processed"
+                value={refactorSummary?.total ?? 0}
                 onClick={() => navigate("/manifest")}
               />
               <StatCard
-                icon={<Scan className="h-6 w-6 text-accent-purple" />}
-                label="Resources Found"
-                value={Array.isArray(scanResult?.resourcesFound) ? scanResult.resourcesFound.length : (scanResult?.services_found?.length ?? 0)}
-                onClick={() => navigate("/manifest")}
+                icon={<Zap className="h-6 w-6 text-accent-purple" />}
+                label="Files Changed"
+                value={diffs.length}
+                onClick={() => navigate("/diff")}
               />
               <StatCard
                 icon={<FileText className="h-6 w-6 text-accent-cyan" />}
@@ -591,19 +505,12 @@ export default function Dashboard() {
                 <Clock className="h-4 w-4" />
                 Agent Activity
               </h3>
-              {runningStep && (
-                <PipelineTimer
-                  startedAt={stepStartedAt}
-                  estimatedSeconds={STEP_ESTIMATE_SECONDS[runningStep] ?? 60}
-                  stepLabel={STEPS.find((s) => s.key === runningStep)?.label ?? runningStep}
-                />
-              )}
               <div className="flex-1 rounded-2xl border border-white/[0.06] bg-surface-50 p-6">
                 {activityLog.length === 0 ? (
                   <div className="flex h-full flex-col items-center justify-center py-20 text-gray-700">
                     <Brain className="mb-4 h-12 w-12" />
                     <p className="text-base text-gray-600">
-                      Agent idle. Run the pipeline to begin.
+                      Agent idle. Click Refactor to begin.
                     </p>
                   </div>
                 ) : (

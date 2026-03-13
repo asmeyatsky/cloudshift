@@ -29,14 +29,14 @@ import {
 import { useAuthStore } from "../store/authStore";
 import ImportProjectModal from "./ImportProjectModal";
 import {
-  SEED_PLAN_RESULT,
   SEED_DIFFS,
-  SEED_PLAN_RESULT_AZURE,
   SEED_DIFFS_AZURE,
+  SEED_REFACTOR_SUMMARY,
+  SEED_REFACTOR_SUMMARY_AZURE,
 } from "../seed";
 
 const NAV_ITEMS = [
-  { to: "/", icon: LayoutDashboard, label: "Pipeline" },
+  { to: "/", icon: LayoutDashboard, label: "Refactor" },
   { to: "/manifest", icon: FileText, label: "Manifest" },
   { to: "/diff", icon: GitCompare, label: "Diff Viewer" },
   { to: "/validation", icon: ShieldCheck, label: "Validation" },
@@ -47,14 +47,14 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { connected } = useWebSocket();
-  const progress = useOperationStore((s) => s.progress);
   const running = useOperationStore((s) => s.running);
+  const refactorProgress = useOperationStore((s) => s.refactorProgress);
   const projects = useProjectStore((s) => s.projects);
   const activeProject = useProjectStore((s) => s.activeProject);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const resetOps = useOperationStore((s) => s.reset);
-  const setPlanResult = useOperationStore((s) => s.setPlanResult);
   const setDiffs = useOperationStore((s) => s.setDiffs);
+  const setRefactorSummary = useOperationStore((s) => s.setRefactorSummary);
   const setEntries = useManifestStore((s) => s.setEntries);
   const setValidationResult = useValidationStore((s) => s.setResult);
 
@@ -75,11 +75,11 @@ export default function Layout() {
       setEntries([]);
       setActiveProject(proj);
       if (proj.id === "demo-aws") {
-        setPlanResult(SEED_PLAN_RESULT);
         setDiffs(SEED_DIFFS);
+        setRefactorSummary(SEED_REFACTOR_SUMMARY);
       } else if (proj.id === "demo-azure") {
-        setPlanResult(SEED_PLAN_RESULT_AZURE);
         setDiffs(SEED_DIFFS_AZURE);
+        setRefactorSummary(SEED_REFACTOR_SUMMARY_AZURE);
       }
     }
     setProjectDropdownOpen(false);
@@ -245,7 +245,7 @@ export default function Layout() {
               {apiKey ? (
                 <p className="text-xs text-accent-green/80">Key set</p>
               ) : (
-                <p className="text-xs text-amber-400/80">Set key to use pipeline</p>
+                <p className="text-xs text-amber-400/80">Set key to use API</p>
               )}
             </div>
           )}
@@ -275,23 +275,23 @@ export default function Layout() {
         </div>
 
         {/* Progress bar */}
-        {running && progress && (
+        {running && refactorProgress && (
           <div className="border-t border-white/[0.06] px-5 py-4">
             <p className="mb-2 truncate text-xs font-semibold uppercase tracking-wider text-primary-400/80">
-              {progress.operation}
+              Refactoring
             </p>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-300">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-purple transition-all duration-300"
-                style={{ width: `${progress.percentage}%` }}
+                style={{ width: `${Math.round((refactorProgress.current / refactorProgress.total) * 100)}%` }}
               />
             </div>
             <div className="mt-1.5 flex items-center justify-between">
               <p className="truncate text-xs text-gray-600">
-                {progress.message}
+                {refactorProgress.currentFile}
               </p>
               <p className="font-mono text-xs text-gray-500">
-                {progress.percentage}%
+                {refactorProgress.current}/{refactorProgress.total}
               </p>
             </div>
           </div>

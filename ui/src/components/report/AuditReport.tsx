@@ -6,6 +6,7 @@ import {
   FileText,
   GitCompare,
   AlertTriangle,
+  Zap,
 } from "lucide-react";
 import { useManifestStore, useValidationStore, useOperationStore } from "../../store";
 
@@ -18,8 +19,8 @@ interface Props {
 export default function AuditReport({ loading, reportHtml, onGenerate }: Props) {
   const entries = useManifestStore((s) => s.entries);
   const validationResult = useValidationStore((s) => s.result);
-  const scanResult = useOperationStore((s) => s.scanResult);
-  const planResult = useOperationStore((s) => s.planResult);
+  const diffs = useOperationStore((s) => s.diffs);
+  const refactorSummary = useOperationStore((s) => s.refactorSummary);
 
   return (
     <div className="space-y-6">
@@ -66,18 +67,18 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <ReportCard
           icon={<FileText className="h-5 w-5 text-primary-400" />}
-          label="Files Scanned"
-          value={scanResult?.filesScanned ?? scanResult?.total_files_scanned ?? 0}
+          label="Files Processed"
+          value={refactorSummary?.total ?? 0}
         />
         <ReportCard
           icon={<GitCompare className="h-5 w-5 text-accent-purple" />}
-          label="Transformations"
-          value={planResult?.transformations?.length ?? 0}
+          label="Files Changed"
+          value={diffs.length}
         />
         <ReportCard
-          icon={<FileBarChart className="h-5 w-5 text-accent-green" />}
-          label="Manifest Entries"
-          value={entries.length}
+          icon={<Zap className="h-5 w-5 text-accent-green" />}
+          label="Via Patterns"
+          value={refactorSummary?.patternCount ?? 0}
         />
         <ReportCard
           icon={<AlertTriangle className="h-5 w-5 text-amber-400" />}
