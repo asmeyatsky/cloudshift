@@ -130,7 +130,8 @@ async def _refactor_with_llm(
     try:
         refactored = await llm.transform_code(content, instruction, lang)
         return (refactored or "").strip() or content
-    except Exception:
+    except Exception as e:
+        logger.warning("LLM transform_code failed (returning original): %s", e)
         return content
 
 
@@ -183,6 +184,7 @@ async def refactor_file(
     container=Depends(get_container),
 ) -> RefactorResultResponse:
     """Refactor file content to GCP: try patterns first, then LLM if no pattern matches."""
+    logger.info("Refactor file: llm_type=%s", _llm_type(container))
     try:
         refactored = await _refactor_with_patterns(
             body.content,
@@ -206,6 +208,8 @@ async def refactor_file(
                     status_code=503,
                     detail=f"No pattern matched and LLM is not configured (server llm={llm_type}). Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns. Get a key at https://aistudio.google.com/apikey",
                 )
+            if refactored == body.content and _is_llm_configured(container):
+                logger.info("Refactor file: LLM configured but no changes produced (returning 200)")
         changes = _build_changes(body.content, refactored)
         return RefactorResultResponse(
             original_file=body.file_path,
@@ -232,6 +236,7 @@ async def refactor_selection(
     container=Depends(get_container),
 ) -> RefactorResultResponse:
     """Refactor selected lines to GCP: try patterns first, then LLM if no pattern matches."""
+    logger.info("Refactor selection: llm_type=%s", _llm_type(container))
     try:
         lines = body.content.splitlines()
         start = max(0, body.start_line - 1)
@@ -269,6 +274,8 @@ async def refactor_selection(
                 status_code=503,
                 detail=f"No pattern matched and LLM is not configured (server llm={llm_type}). Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns. Get a key at https://aistudio.google.com/apikey",
             )
+        if refactored_content == body.content and _is_llm_configured(container):
+            logger.info("Refactor selection: LLM configured but no changes produced (returning 200)")
         changes = _build_changes(body.content, refactored_content)
         return RefactorResultResponse(
             original_file=body.file_path,
