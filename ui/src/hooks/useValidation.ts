@@ -96,13 +96,11 @@ export function useValidation() {
     });
   }, [activeProject, loading, setLoading, setError, setResult]);
 
-  const fetchLatest = useCallback(async () => {
-    if (!activeProject) return;
-    setLoading(true);
-    const res = await validationApi.latest(activeProject.id);
-    if (res.success && res.data) setResult(res.data);
-    setLoading(false);
-  }, [activeProject, setLoading, setResult]);
+  // fetchLatest is a no-op: validation results are already populated in the store
+  // by runValidation(). The backend has no "fetch latest by project" endpoint —
+  // validationApi.latest() expects a job_id, not a project_id, so calling it
+  // with activeProject.id always 404s.
+  const fetchLatest = useCallback(async () => {}, []);
 
   return { runValidation, fetchLatest, result, loading, error };
 }

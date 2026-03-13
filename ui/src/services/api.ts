@@ -270,15 +270,32 @@ export const projectApi = {
 
 export const manifestApi = {
   get: async (projectId: string): Promise<ApiResult<Manifest>> => {
+    const res = await get<Array<{ file: string; patterns: unknown[]; status: string }>>(`/manifest?project_id=${encodeURIComponent(projectId)}`);
+    if (!res.success) return res as ApiResult<Manifest>;
+    const entries = (res.data ?? []).map((e, idx) => ({
+      id: `e-${idx}`,
+      filePath: e.file,
+      resourceType: "Unknown",
+      sourceProvider: "aws" as const,
+      targetProvider: "gcp" as const,
+      status: (e.status ?? "pending") as "pending" | "scanned" | "planned" | "applied" | "validated" | "skipped",
+      transformations: [],
+      issues: [],
+      metadata: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    const byStatus = { pending: 0, scanned: 0, planned: 0, applied: 0, validated: 0, skipped: 0 };
+    for (const e of entries) byStatus[e.status] = (byStatus[e.status] ?? 0) + 1;
     return {
       success: true,
       data: {
         id: `manifest-${projectId}`,
         projectId,
-        entries: [],
+        entries,
         summary: {
-          totalEntries: 0,
-          byStatus: { pending: 0, scanned: 0, planned: 0, applied: 0, validated: 0, skipped: 0 },
+          totalEntries: entries.length,
+          byStatus,
           byResourceType: {},
           byProvider: { aws: 0, azure: 0, gcp: 0 },
         },

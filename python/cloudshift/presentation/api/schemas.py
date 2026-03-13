@@ -130,6 +130,7 @@ class PatternMatchResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
         alias_generator=_to_camel,
+        serialize_by_alias=True,
     )
 
 

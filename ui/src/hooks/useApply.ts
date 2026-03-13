@@ -105,13 +105,7 @@ export function useApply() {
             reject(new Error("Apply timed out (20 min)"));
             return;
           }
-          if (errMsg?.toLowerCase().includes("not found")) {
-            setError("Apply result no longer available (session may have expired). Run Apply again.");
-            setRunning(false);
-            reject(new Error("Apply result not found (404)"));
-            return;
-          }
-          if (errMsg?.toLowerCase().includes("in progress")) {
+          if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {
             setTimeout(poll, pollMs);
             return;
           }

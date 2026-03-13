@@ -4,5 +4,8 @@
   "workspaces": [
     "ui",
     "vscode-extension"
-  ]
+  ],
+  "devDependencies": {
+    "jsdom": "^28.1.0"
+  }
 }

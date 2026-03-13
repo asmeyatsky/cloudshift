@@ -49,14 +49,17 @@ export function usePlan() {
   const setError = useOperationStore((s) => s.setError);
 
   const createPlan = useCallback((): Promise<void> => {
-    if (!activeProject || running) return Promise.reject(new Error("Already running or no project"));
+    // Read fresh state at call time to avoid stale closures during pipeline sequence
+    const project = useProjectStore.getState().activeProject ?? activeProject;
+    const isRunning = useOperationStore.getState().running ?? running;
+    if (!project || isRunning) return Promise.reject(new Error("Already running or no project"));
 
     setRunning(true);
     setError(null);
     setPlanResult(null);
     setDiffs([]);
 
-    return planApi.create(activeProject.id, activeProject.id).then((res) => {
+    return planApi.create(project.id, project.id).then((res) => {
       if (!res.success) {
         const msg = res.error ?? "Plan creation failed";
         setError(msg);
@@ -103,13 +106,7 @@ export function usePlan() {
             reject(new Error("Plan timed out (30 min)"));
             return;
           }
-          if (errMsg?.toLowerCase().includes("not found")) {
-            setError("Plan result no longer available (session may have expired). Run Plan again.");
-            setRunning(false);
-            reject(new Error("Plan result not found (404)"));
-            return;
-          }
-          if (errMsg?.toLowerCase().includes("in progress")) {
+          if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {
             setTimeout(poll, pollMs);
             return;
           }

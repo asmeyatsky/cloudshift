@@ -102,19 +102,38 @@ function runRefactorSelection(
           );
 
           if (choice === applyAction) {
-            const edit = new vscode.WorkspaceEdit();
-            edit.replace(
-              document.uri,
-              new vscode.Range(
-                document.positionAt(0),
-                document.positionAt(content.length),
-              ),
-              result.refactoredContent,
-            );
-            await vscode.workspace.applyEdit(edit);
-            vscode.window.showInformationMessage(
-              "CloudShift: Refactoring applied.",
-            );
+            if (result.refactoredContent === content) {
+              vscode.window.showInformationMessage(
+                "CloudShift: No changes to apply (content is identical).",
+              );
+            } else {
+              const sizeDelta = Math.abs(result.refactoredContent.length - content.length);
+              const sizeRatio = result.refactoredContent.length / Math.max(content.length, 1);
+              let proceed = true;
+              if (sizeRatio < 0.5 || sizeRatio > 2.0) {
+                const confirm = await vscode.window.showWarningMessage(
+                  `CloudShift: Refactored content differs significantly in size (${sizeDelta} chars, ${Math.round(sizeRatio * 100)}% of original). Apply anyway?`,
+                  "Apply",
+                  "Cancel",
+                );
+                proceed = confirm === "Apply";
+              }
+              if (proceed) {
+                const edit = new vscode.WorkspaceEdit();
+                edit.replace(
+                  document.uri,
+                  new vscode.Range(
+                    document.positionAt(0),
+                    document.positionAt(content.length),
+                  ),
+                  result.refactoredContent,
+                );
+                await vscode.workspace.applyEdit(edit);
+                vscode.window.showInformationMessage(
+                  "CloudShift: Refactoring applied.",
+                );
+              }
+            }
           } else if (choice === showOutputAction) {
             const out = vscode.window.createOutputChannel("CloudShift");
             out.show(true);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import ValidationDashboard from "../components/validation/ValidationDashboard";
 import IssueList from "../components/validation/IssueList";
 import FixOverlay from "../components/validation/FixOverlay";
@@ -8,7 +8,7 @@ import { SEED_FIX_DATA } from "../seed";
 import type { ValidationIssue } from "../types";
 
 export default function ValidationPage() {
-  const { runValidation, fetchLatest, result, loading, error } =
+  const { runValidation, result, loading, error } =
     useValidation();
   const planResult = useOperationStore((s) => s.planResult);
   const [fixIssue, setFixIssue] = useState<ValidationIssue | null>(null);
@@ -18,11 +18,8 @@ export default function ValidationPage() {
     if (planResult?.id) runValidation(planResult.id);
   };
 
-  useEffect(() => {
-    if (!result) {
-      fetchLatest();
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Validation results come from runValidation() in the pipeline — no
+  // "fetch latest by project" endpoint exists, so we don't fetch on mount.
 
   const fixData = fixIssue ? SEED_FIX_DATA[fixIssue.id] : null;
 
