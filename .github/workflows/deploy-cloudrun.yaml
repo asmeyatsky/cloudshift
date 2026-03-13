@@ -5,6 +5,7 @@
 #   GCP_SA_KEY: JSON key for a service account in the deploy project (emea-mas) with:
 #     - Artifact Registry Writer, Cloud Run Admin, Service Account User
 #   GEMINI_API_KEY: (optional) Google Gemini API key for demo mode
+#   CLOUDSHIFT_API_KEY: (optional) API key for searce_id auth (VS Code / scripts behind IAP)
 # See docs/deploy-emea-mas.md for SA setup.
 name: Build and Deploy to Cloud Run
 
@@ -65,6 +66,9 @@ jobs:
           ENV_VARS="CLOUDSHIFT_LLM_ENABLED=false"
           if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
             ENV_VARS="CLOUDSHIFT_DEPLOYMENT_MODE=demo,CLOUDSHIFT_GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},${ENV_VARS}"
+          fi
+          if [ -n "${{ secrets.CLOUDSHIFT_API_KEY }}" ]; then
+            ENV_VARS="CLOUDSHIFT_AUTH_MODE=searce_id,CLOUDSHIFT_API_KEY=${{ secrets.CLOUDSHIFT_API_KEY }},${ENV_VARS}"
           fi
           gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
             --image="${IMAGE}" \
