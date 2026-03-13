@@ -99,7 +99,7 @@ export default function IssueList({ issues, onFix }: Props) {
           </div>
         ) : (
           filtered.map((issue) => {
-            const cfg = SEVERITY_CONFIG[issue.severity];
+            const cfg = SEVERITY_CONFIG[issue.severity as Severity] ?? SEVERITY_CONFIG.info;
             const Icon = cfg.icon;
             return (
               <div

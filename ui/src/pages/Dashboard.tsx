@@ -467,7 +467,8 @@ export default function Dashboard() {
             </div>
 
             <div className="grid grid-cols-4 gap-4">
-              {STEPS.map((step, idx) => {
+              {STEPS.filter(Boolean).map((step, idx) => {
+                if (!step?.icon) return null;
                 const status = getStepStatus(step.key);
                 const Icon = step.icon;
 
@@ -579,7 +580,7 @@ export default function Dashboard() {
               {runningStep && (
                 <PipelineTimer
                   startedAt={stepStartedAt}
-                  estimatedSeconds={STEP_ESTIMATE_SECONDS[runningStep]}
+                  estimatedSeconds={STEP_ESTIMATE_SECONDS[runningStep] ?? 60}
                   stepLabel={STEPS.find((s) => s.key === runningStep)?.label ?? runningStep}
                 />
               )}

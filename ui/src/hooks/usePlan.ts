@@ -103,13 +103,19 @@ export function usePlan() {
             reject(new Error("Plan timed out (30 min)"));
             return;
           }
-          if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {
-            setTimeout(poll, pollMs);
-          } else {
-            setError(errMsg ?? "Plan failed");
+          if (errMsg?.toLowerCase().includes("not found")) {
+            setError("Plan result no longer available (session may have expired). Run Plan again.");
             setRunning(false);
-            reject(new Error(errMsg ?? "Plan failed"));
+            reject(new Error("Plan result not found (404)"));
+            return;
           }
+          if (errMsg?.toLowerCase().includes("in progress")) {
+            setTimeout(poll, pollMs);
+            return;
+          }
+          setError(errMsg ?? "Plan failed");
+          setRunning(false);
+          reject(new Error(errMsg ?? "Plan failed"));
         };
         poll();
       });

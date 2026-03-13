@@ -103,13 +103,19 @@ export function useApply() {
             reject(new Error("Apply timed out (20 min)"));
             return;
           }
-          if (errMsg?.toLowerCase().includes("not found") || errMsg?.toLowerCase().includes("in progress")) {
-            setTimeout(poll, pollMs);
-          } else {
-            setError(errMsg ?? "Apply failed");
+          if (errMsg?.toLowerCase().includes("not found")) {
+            setError("Apply result no longer available (session may have expired). Run Apply again.");
             setRunning(false);
-            reject(new Error(errMsg ?? "Apply failed"));
+            reject(new Error("Apply result not found (404)"));
+            return;
           }
+          if (errMsg?.toLowerCase().includes("in progress")) {
+            setTimeout(poll, pollMs);
+            return;
+          }
+          setError(errMsg ?? "Apply failed");
+          setRunning(false);
+          reject(new Error(errMsg ?? "Apply failed"));
         };
         poll();
       });

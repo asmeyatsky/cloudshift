@@ -179,7 +179,7 @@ export default function Layout() {
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-5">
-          {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+          {NAV_ITEMS.filter(Boolean).map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}

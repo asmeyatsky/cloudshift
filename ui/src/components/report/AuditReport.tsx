@@ -72,7 +72,7 @@ export default function AuditReport({ loading, reportHtml, onGenerate }: Props) 
         <ReportCard
           icon={<GitCompare className="h-5 w-5 text-accent-purple" />}
           label="Transformations"
-          value={planResult?.transformations.length ?? 0}
+          value={planResult?.transformations?.length ?? 0}
         />
         <ReportCard
           icon={<FileBarChart className="h-5 w-5 text-accent-green" />}
