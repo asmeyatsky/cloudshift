@@ -32,7 +32,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = getattr(app.state, "settings", None)
     container = Container(settings=settings)
     app.state.container = container
-    logger.info("DI container initialised")
+    llm_name = getattr(container.llm.__class__, "__name__", "?")
+    logger.info(
+        "DI container initialised; deployment_mode=%s gemini_configured=%s llm=%s",
+        getattr(settings, "deployment_mode", "?"),
+        bool(getattr(settings, "gemini_api_key", None)),
+        llm_name,
+    )
     yield
     logger.info("Shutting down")
 

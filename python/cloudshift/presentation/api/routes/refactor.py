@@ -98,6 +98,14 @@ def _is_llm_configured(container) -> bool:
     return getattr(llm.__class__, "__name__", "") != "NullLLMAdapter"
 
 
+def _llm_type(container) -> str:
+    """Return the LLM adapter class name for diagnostics."""
+    llm = getattr(container, "llm", None)
+    if llm is None:
+        return "None"
+    return getattr(llm.__class__, "__name__", "unknown")
+
+
 async def _refactor_with_llm(
     content: str,
     file_path: str,
@@ -192,9 +200,11 @@ async def refactor_file(
                 container,
             )
             if refactored == body.content and not _is_llm_configured(container):
+                llm_type = _llm_type(container)
+                logger.warning("Refactor file: no pattern match and LLM not configured (llm=%s)", llm_type)
                 raise HTTPException(
                     status_code=503,
-                    detail="No pattern matched and LLM is not configured. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns for this code. Get a key at https://aistudio.google.com/apikey",
+                    detail=f"No pattern matched and LLM is not configured (server llm={llm_type}). Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns. Get a key at https://aistudio.google.com/apikey",
                 )
         changes = _build_changes(body.content, refactored)
         return RefactorResultResponse(
@@ -253,9 +263,11 @@ async def refactor_selection(
                 parts.append("\n".join(lines[end:]))
             refactored_content = "\n".join(parts)
         if refactored_content == body.content and not _is_llm_configured(container):
+            llm_type = _llm_type(container)
+            logger.warning("Refactor selection: no pattern match and LLM not configured (llm=%s)", llm_type)
             raise HTTPException(
                 status_code=503,
-                detail="No pattern matched and LLM is not configured. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns for this code. Get a key at https://aistudio.google.com/apikey",
+                detail=f"No pattern matched and LLM is not configured (server llm={llm_type}). Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns. Get a key at https://aistudio.google.com/apikey",
             )
         changes = _build_changes(body.content, refactored_content)
         return RefactorResultResponse(

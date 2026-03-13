@@ -4,8 +4,9 @@
 # Required GitHub secrets:
 #   GCP_SA_KEY: JSON key for a service account in the deploy project (emea-mas) with:
 #     - Artifact Registry Writer, Cloud Run Admin, Service Account User
-#   GEMINI_API_KEY: (optional) Google Gemini API key for demo mode
-#   CLOUDSHIFT_API_KEY: (optional) API key for searce_id auth (VS Code / scripts behind IAP)
+#   GEMINI_API_KEY: Google Gemini API key for demo mode (refactor LLM)
+# Optional:
+#   CLOUDSHIFT_API_KEY: if set, enables searce_id auth and API key for VS Code / scripts
 # See docs/deploy-emea-mas.md for SA setup.
 name: Build and Deploy to Cloud Run
 
