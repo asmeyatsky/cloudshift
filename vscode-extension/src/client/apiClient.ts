@@ -305,12 +305,16 @@ export class ApiClient {
     content: string,
     sourceProvider: "AWS" | "Azure",
   ): Promise<RefactorResult> {
-    return this.request<RefactorResult>("POST", "/api/refactor/file", {
-      filePath,
-      content,
-      sourceProvider,
-      targetProvider: "GCP",
-    });
+    const body = { filePath, content, sourceProvider, targetProvider: "GCP" };
+    try {
+      return await this.request<RefactorResult>("POST", "/api/refactor/file", body);
+    } catch (err) {
+      if (err instanceof CloudShiftApiError && err.statusCode === 503) {
+        await new Promise((r) => setTimeout(r, 2000));
+        return this.request<RefactorResult>("POST", "/api/refactor/file", body);
+      }
+      throw err;
+    }
   }
 
   async refactorSelection(
@@ -320,14 +324,23 @@ export class ApiClient {
     endLine: number,
     sourceProvider: "AWS" | "Azure",
   ): Promise<RefactorResult> {
-    return this.request<RefactorResult>("POST", "/api/refactor/selection", {
+    const body = {
       filePath,
       content,
       startLine,
       endLine,
       sourceProvider,
       targetProvider: "GCP",
-    });
+    };
+    try {
+      return await this.request<RefactorResult>("POST", "/api/refactor/selection", body);
+    } catch (err) {
+      if (err instanceof CloudShiftApiError && err.statusCode === 503) {
+        await new Promise((r) => setTimeout(r, 2000));
+        return this.request<RefactorResult>("POST", "/api/refactor/selection", body);
+      }
+      throw err;
+    }
   }
 
   async validate(filePath: string, content: string): Promise<ValidationResult> {

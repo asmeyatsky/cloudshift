@@ -80,6 +80,13 @@ jobs:
             --max-instances=1 \
             --project=${{ env.GCP_PROJECT_ID }}
 
+      - name: Send 100% traffic to latest revision
+        run: |
+          gcloud run services update-traffic ${{ env.CLOUD_RUN_SERVICE }} \
+            --to-latest \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+
       - name: Output service URL
         run: |
           URL=$(gcloud run services describe ${{ env.CLOUD_RUN_SERVICE }} \
