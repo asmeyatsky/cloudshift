@@ -70,6 +70,11 @@ class FakeContainer:
         self.file_system = AsyncMock()
         self.validation = AsyncMock()
         self.pattern_store = MagicMock()
+        # Refactor: patterns first, then LLM. No patterns so LLM is used; mock LLM returns refactored.
+        self.pattern_store.list_all = MagicMock(return_value=[])
+        self.llm = MagicMock()
+        type(self.llm).__name__ = "GeminiAdapter"
+        self.llm.transform_code = AsyncMock(return_value="import google.cloud.storage\nx = 1")
         self.resolve = MagicMock(return_value=MagicMock())
 
 

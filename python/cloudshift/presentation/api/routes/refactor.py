@@ -1,4 +1,7 @@
-"""Refactor routes for VS Code extension: POST /api/refactor/file, POST /api/refactor/selection."""
+"""Refactor routes for VS Code extension: POST /api/refactor/file, POST /api/refactor/selection.
+
+Refactor flow: try pattern matching first; only use LLM when no pattern matches.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +10,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from cloudshift.domain.value_objects.types import Language
+from cloudshift.domain.value_objects.types import CloudProvider, Language
 from cloudshift.presentation.api.dependencies import get_container
 from cloudshift.presentation.api.schemas import (
     RefactorFileRequestBody,
@@ -30,6 +33,58 @@ def _infer_language(file_path: str) -> Language:
     if ext in ("yaml", "yml", "json") and "template" in file_path.lower():
         return Language.CLOUDFORMATION
     return Language.PYTHON
+
+
+def _provider_enum(provider: str) -> CloudProvider | None:
+    """Map source_provider/target_provider string to CloudProvider."""
+    if not provider:
+        return None
+    u = (provider or "").upper()
+    try:
+        return CloudProvider(u)
+    except (KeyError, ValueError):
+        return None
+
+
+async def _refactor_with_patterns(
+    content: str,
+    file_path: str,
+    source_provider: str,
+    target_provider: str,
+    container,
+) -> str | None:
+    """Try pattern-based refactor. Returns refactored content if any pattern matched, else None."""
+    src = _provider_enum(source_provider)
+    tgt = _provider_enum(target_provider)
+    if src is None or tgt is None:
+        return None
+    if tgt != CloudProvider.GCP:
+        return None
+    store = getattr(container, "pattern_store", None)
+    engine = getattr(container, "pattern_engine", None)
+    if store is None or engine is None:
+        return None
+    lang = _infer_language(file_path)
+    patterns = store.list_all(
+        source_provider=src,
+        target_provider=tgt,
+        language=lang,
+    )
+    if not patterns:
+        return None
+    try:
+        matches = await asyncio.to_thread(engine.match, content, patterns, lang)
+    except Exception:
+        return None
+    if not matches:
+        return None
+    modified = content
+    for pattern, _line_start, _line_end in matches:
+        try:
+            modified = await asyncio.to_thread(engine.apply, modified, pattern, lang)
+        except Exception:
+            continue
+    return modified if modified != content else None
 
 
 def _is_llm_configured(container) -> bool:
@@ -116,19 +171,27 @@ async def refactor_file(
     body: RefactorFileRequestBody,
     container=Depends(get_container),
 ) -> RefactorResultResponse:
-    """Refactor file content to GCP using LLM or pattern engine. Synchronous for editor use."""
-    if not _is_llm_configured(container):
-        raise HTTPException(
-            status_code=503,
-            detail="Refactoring requires an LLM. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server. Get a key at https://aistudio.google.com/apikey",
-        )
-    refactored = await _refactor_with_llm(
+    """Refactor file content to GCP: try patterns first, then LLM if no pattern matches."""
+    refactored = await _refactor_with_patterns(
         body.content,
         body.file_path,
         body.source_provider,
         body.target_provider,
         container,
     )
+    if refactored is None:
+        refactored = await _refactor_with_llm(
+            body.content,
+            body.file_path,
+            body.source_provider,
+            body.target_provider,
+            container,
+        )
+        if refactored == body.content and not _is_llm_configured(container):
+            raise HTTPException(
+                status_code=503,
+                detail="No pattern matched and LLM is not configured. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns for this code. Get a key at https://aistudio.google.com/apikey",
+            )
     changes = _build_changes(body.content, refactored)
     return RefactorResultResponse(
         original_file=body.file_path,
@@ -146,12 +209,7 @@ async def refactor_selection(
     body: RefactorSelectionRequestBody,
     container=Depends(get_container),
 ) -> RefactorResultResponse:
-    """Refactor selected lines to GCP; returns full file content with selection replaced."""
-    if not _is_llm_configured(container):
-        raise HTTPException(
-            status_code=503,
-            detail="Refactoring requires an LLM. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server. Get a key at https://aistudio.google.com/apikey",
-        )
+    """Refactor selected lines to GCP: try patterns first, then LLM if no pattern matches."""
     lines = body.content.splitlines()
     start = max(0, body.start_line - 1)
     end = min(len(lines), body.end_line)
@@ -159,13 +217,21 @@ async def refactor_selection(
         refactored_content = body.content
     else:
         selected = "\n".join(lines[start:end])
-        refactored_selection = await _refactor_with_llm(
+        refactored_selection = await _refactor_with_patterns(
             selected,
             body.file_path,
             body.source_provider,
             body.target_provider,
             container,
         )
+        if refactored_selection is None:
+            refactored_selection = await _refactor_with_llm(
+                selected,
+                body.file_path,
+                body.source_provider,
+                body.target_provider,
+                container,
+            )
         parts = []
         if start > 0:
             parts.append("\n".join(lines[:start]))
@@ -173,6 +239,12 @@ async def refactor_selection(
         if end < len(lines):
             parts.append("\n".join(lines[end:]))
         refactored_content = "\n".join(parts)
+    if refactored_content == body.content and not _is_llm_configured(container):
+        # No pattern matched and no LLM to fall back to
+        raise HTTPException(
+            status_code=503,
+            detail="No pattern matched and LLM is not configured. Set CLOUDSHIFT_DEPLOYMENT_MODE=demo and CLOUDSHIFT_GEMINI_API_KEY on the server, or add patterns for this code. Get a key at https://aistudio.google.com/apikey",
+        )
     changes = _build_changes(body.content, refactored_content)
     return RefactorResultResponse(
         original_file=body.file_path,

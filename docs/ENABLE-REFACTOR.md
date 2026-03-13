@@ -1,6 +1,6 @@
 # Enable refactoring (Azure/AWS → GCP)
 
-Refactoring in the **UI** and **VS Code** uses an LLM (Gemini). Without it you get "No refactoring changes" or a 503.
+Refactoring uses **patterns first**: if the code matches a migration pattern (e.g. Azure Blob → GCS), that pattern is applied. **LLM (Gemini) is only used when no pattern matches.** So pattern-based refactors work without any API key; for everything else you need Gemini.
 
 ## One-time setup
 
