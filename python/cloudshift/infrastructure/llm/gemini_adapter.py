@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from cloudshift.domain.value_objects.types import ConfidenceScore, Language
 
+logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
@@ -42,14 +45,21 @@ class GeminiAdapter:
         resp.raise_for_status()
         data = resp.json()
         try:
-            return (
+            text = (
                 data.get("candidates", [{}])[0]
                 .get("content", {})
                 .get("parts", [{}])[0]
                 .get("text", "")
             )
         except (IndexError, KeyError):
-            return ""
+            text = ""
+        if not (text or "").strip():
+            # Blocked, empty, or unexpected shape - log for debugging
+            logger.warning(
+                "Gemini returned no text. candidates=%s",
+                data.get("candidates", [])[:1],
+            )
+        return text or ""
 
     async def transform_code(
         self, source: str, instruction: str, language: Language,

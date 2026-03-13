@@ -106,6 +106,22 @@ def _llm_type(container) -> str:
     return getattr(llm.__class__, "__name__", "unknown")
 
 
+def _refactor_instruction(source: str, target: str) -> str:
+    """Build a clear migration instruction so the LLM returns GCP code, not the original."""
+    base = (
+        f"Refactor this {source} code to equivalent {target} (GCP) code. "
+        "Preserve behavior and logic. "
+        "Use GCP SDKs: for Python use google-cloud-* packages (e.g. google-cloud-storage instead of Azure Blob, google-auth for credentials). "
+        "Return ONLY the refactored code in a single fenced code block (e.g. ```python ... ```), no explanation or duplicate original."
+    )
+    if source == "AZURE":
+        base += (
+            " For Azure Blob Storage use Google Cloud Storage (google-cloud-storage). "
+            "For DefaultAzureCredential use Google Application Default Credentials (google.auth.default)."
+        )
+    return base
+
+
 async def _refactor_with_llm(
     content: str,
     file_path: str,
@@ -113,7 +129,7 @@ async def _refactor_with_llm(
     target_provider: str,
     container,
 ) -> str:
-    """Use LLM to refactor content to GCP. Returns refactored content or original if no LLM."""
+    """Use LLM to refactor content to GCP. Returns refactored content or raises on failure."""
     llm = getattr(container, "llm", None)
     if llm is None:
         return content
@@ -121,18 +137,15 @@ async def _refactor_with_llm(
         return content
     source = (source_provider or "AWS").upper()
     target = (target_provider or "GCP").upper()
-    instruction = (
-        f"Refactor this {source} code to equivalent {target} (GCP) code. "
-        "Preserve behavior and logic. Use GCP SDKs (e.g. google-cloud-* for Python). "
-        "Return only the refactored code in a single fenced code block, no explanation."
-    )
+    instruction = _refactor_instruction(source, target)
     lang = _infer_language(file_path)
-    try:
-        refactored = await llm.transform_code(content, instruction, lang)
-        return (refactored or "").strip() or content
-    except Exception as e:
-        logger.warning("LLM transform_code failed (returning original): %s", e)
-        return content
+    refactored = await llm.transform_code(content, instruction, lang)
+    out = (refactored or "").strip()
+    if not out or out == content:
+        raise ValueError(
+            "LLM did not return refactored code (empty or unchanged). Check server logs for Gemini errors."
+        )
+    return out
 
 
 def _build_changes(original: str, refactored: str) -> list[dict]:
@@ -222,7 +235,7 @@ async def refactor_file(
         logger.exception("Refactor file failed: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"Refactor failed: {str(e)[:200]}",
+            detail=f"Refactor failed: {str(e)[:500]}",
         ) from e
 
 
@@ -288,5 +301,5 @@ async def refactor_selection(
         logger.exception("Refactor selection failed: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"Refactor failed: {str(e)[:200]}",
+            detail=f"Refactor failed: {str(e)[:500]}",
         ) from e

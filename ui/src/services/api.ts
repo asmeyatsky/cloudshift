@@ -19,10 +19,10 @@ type ApiResult<T> =
 
 function getAuthHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {};
-  const { token } = useAuthStore.getState();
+  const { token, apiKey } = useAuthStore.getState();
   if (token) return { Authorization: `Bearer ${token}` };
-  const apiKey = (window as unknown as { __CLOUDSHIFT_API_KEY__?: string }).__CLOUDSHIFT_API_KEY__;
-  if (apiKey) return { "X-API-Key": apiKey };
+  const key = apiKey ?? (window as unknown as { __CLOUDSHIFT_API_KEY__?: string }).__CLOUDSHIFT_API_KEY__;
+  if (key) return { "X-API-Key": key };
   return {};
 }
 

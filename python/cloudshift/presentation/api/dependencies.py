@@ -50,11 +50,16 @@ async def verify_api_key(
 async def verify_auth(request: Request):
     """Single auth dependency: dispatches by settings.auth_mode."""
     settings = get_settings(request)
+    if settings is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server not ready (settings not loaded). Retry shortly.",
+        )
     mode: AuthMode = getattr(settings, "auth_mode", "api_key") or "api_key"
 
     if mode == "api_key":
         api_key = request.headers.get("X-API-Key") or ""
-        if not settings.api_key:
+        if not getattr(settings, "api_key", None):
             return
         if api_key != settings.api_key:
             raise HTTPException(
@@ -71,7 +76,7 @@ async def verify_auth(request: Request):
         api_key = request.headers.get("X-API-Key") or ""
         if iap_jwt or searce_id or token:
             return
-        if settings.api_key and api_key == settings.api_key:
+        if getattr(settings, "api_key", None) and api_key == settings.api_key:
             return
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -61,7 +61,10 @@ export default function Layout() {
   const [importOpen, setImportOpen] = useState(false);
   const deploymentMode = useAuthStore((s) => s.deploymentMode);
   const authMode = useAuthStore((s) => s.authMode);
+  const apiKey = useAuthStore((s) => s.apiKey);
+  const setApiKey = useAuthStore((s) => s.setApiKey);
   const logout = useAuthStore((s) => s.logout);
+  const [apiKeyInput, setApiKeyInput] = useState(apiKey ?? "");
 
   const switchProject = (projectId: string) => {
     const proj = projects.find((p) => p.id === projectId);
@@ -219,9 +222,24 @@ export default function Layout() {
           </div>
 
           {authMode === "searce_id" && (
-            <p className="mt-3 px-1 text-xs text-gray-500">
-              Signed in via IAP
-            </p>
+            <div className="mt-3 space-y-2 px-1">
+              <p className="text-xs text-gray-500">
+                API calls need an API key when /api is not behind IAP.
+              </p>
+              <input
+                type="password"
+                placeholder="API key"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                onBlur={() => apiKeyInput.trim() && setApiKey(apiKeyInput.trim())}
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder-gray-500 focus:border-primary-500/50 focus:outline-none"
+              />
+              {apiKey ? (
+                <p className="text-xs text-accent-green/80">Key set</p>
+              ) : (
+                <p className="text-xs text-amber-400/80">Set key to use pipeline</p>
+              )}
+            </div>
           )}
           {authMode === "password" && (
             <button
