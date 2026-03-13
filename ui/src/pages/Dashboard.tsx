@@ -209,7 +209,13 @@ export default function Dashboard() {
       if (planAfter.estimatedChanges > 0) {
         addLog(`Plan ready: ${planAfter.estimatedChanges} changes queued`, "success");
       } else {
-        addLog("Plan finished but no transformations found (0 changes). Use a project with AWS/Azure code or try AWS Demo / Azure Demo.", "warning");
+        const isSnippet = activeProject?.path?.includes("snippets");
+        addLog(
+          isSnippet
+            ? "Plan finished with no pattern matches for this snippet. Apply will still run and may produce a GCP version if the server has an LLM configured."
+            : "Plan finished but no transformations found (0 changes). Use a project with AWS/Azure code or try AWS Demo / Azure Demo.",
+          "warning"
+        );
       }
     }
 

@@ -61,25 +61,31 @@ async def _llm_fallback_refactor(
         "Return only the refactored code in a single fenced code block, no explanation."
     )
     details: list[dict[str, Any]] = []
+    root_resolved = root.resolve()
     for entry in getattr(manifest, "entries", []) or []:
         file_path = getattr(entry, "file_path", "") or getattr(entry, "path", "")
         if not file_path:
             continue
-        path = (root / file_path).resolve()
-        if not path.is_file() or not path.is_relative_to(root.resolve()):
+        path = Path(file_path).resolve() if Path(file_path).is_absolute() else (root / file_path).resolve()
+        if not path.is_file():
             continue
         try:
-            content = await asyncio.to_thread(path.read_text, encoding="utf-8")
+            path = path.resolve().relative_to(root_resolved)
+        except ValueError:
+            continue
+        try:
+            content = await asyncio.to_thread((root_resolved / path).read_text, encoding="utf-8")
         except Exception:
             continue
-        lang = _infer_language(file_path)
+        path_str = str(path).replace("\\", "/")
+        lang = _infer_language(path_str)
         try:
             refactored = await llm.transform_code(content, instruction, lang)
         except Exception:
             refactored = content
         refactored = (refactored or "").strip() or content
         details.append({
-            "path": file_path,
+            "path": path_str,
             "original_content": content,
             "modified_content": refactored,
             "language": lang.name.lower(),

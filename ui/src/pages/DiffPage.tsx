@@ -72,6 +72,11 @@ export default function DiffPage() {
               <p className="mt-3 text-gray-400">
                 If you just pasted a <strong>code snippet</strong>, pick the correct source (AWS or Azure) and use code that calls supported APIs (e.g. <code className="rounded bg-white/10 px-1">boto3</code>, <code className="rounded bg-white/10 px-1">azure.storage.blob</code>, Lambda, Azure Functions). Otherwise run <strong>Scan</strong> first on a project with AWS/Azure code; the path must exist where the backend runs. For a quick try, use <strong>AWS Demo</strong> or <strong>Azure Demo</strong> from the project dropdown.
               </p>
+              {activeProject?.path?.includes("snippets") && (
+                <p className="mt-2 text-gray-400">
+                  Apply still runs after Plan. If the server has an <strong>LLM</strong> configured, a GCP refactor may appear below. If you see no diffs, enable an LLM on the server or use <strong>AWS Demo</strong> / <strong>Azure Demo</strong> for a full example.
+                </p>
+              )}
             </div>
           )}
         </>
