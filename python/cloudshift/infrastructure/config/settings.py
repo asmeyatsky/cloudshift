@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     ollama_timeout: float = Field(default=120.0, description="Ollama request timeout in seconds.")
     # -- LLM (demo: Gemini) --
     gemini_api_key: str | None = Field(default=None, description="Google Gemini API key (demo mode).")
-    gemini_model: str = Field(default="gemini-1.5-flash", description="Gemini model name.")
+    gemini_model: str = Field(default="gemini-2.5-flash", description="Gemini model name (e.g. gemini-2.5-flash; gemini-1.5-flash is deprecated).")
     gemini_timeout: float = Field(default=120.0, description="Gemini request timeout in seconds.")
 
     # -- Validation --

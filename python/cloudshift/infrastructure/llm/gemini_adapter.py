@@ -22,7 +22,7 @@ class GeminiAdapter:
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-1.5-flash",
+        model: str = "gemini-2.5-flash",
         timeout: float = 120.0,
     ) -> None:
         self._api_key = api_key
