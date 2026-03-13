@@ -70,3 +70,19 @@ async def auth_mode(settings=Depends(get_settings)) -> dict:
         "auth_mode": settings.auth_mode,
         "deployment_mode": settings.deployment_mode,
     }
+
+
+@router.get("/debug", summary="[Debug] Auth state and received headers (no auth required)")
+async def auth_debug(request: Request, settings=Depends(get_settings)) -> dict:
+    """Return auth_mode, whether api_key is configured, and which auth headers are present.
+    Use to diagnose 401: call with same URL/headers as the failing client."""
+    return {
+        "auth_mode": settings.auth_mode,
+        "api_key_configured": bool(settings.api_key),
+        "headers_received": {
+            "X-API-Key": (request.headers.get("X-API-Key") or "").strip() != "",
+            "X-Searce-ID": (request.headers.get("X-Searce-ID") or "").strip() != "",
+            "Authorization": (request.headers.get("Authorization") or "").strip() != "",
+            "X-Goog-IAP-JWT-Assertion": (request.headers.get("X-Goog-IAP-JWT-Assertion") or "").strip() != "",
+        },
+    }
