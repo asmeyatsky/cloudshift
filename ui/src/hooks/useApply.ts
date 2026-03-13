@@ -86,6 +86,8 @@ export function useApply() {
             const data = statusRes.data as unknown as Record<string, unknown>;
             setApplyResult(mapApplyResponse(data));
             let fileDiffs = buildFileDiffsFromApplyResult(data);
+            // Ignore no-op diffs (identical original/modified) so we don't show empty diffs in the viewer
+            fileDiffs = fileDiffs.filter((d) => d.original !== d.modified);
             if (fileDiffs.length === 0) {
               const currentProject = useProjectStore.getState().activeProject;
               if (currentProject?.id === "demo-azure") fileDiffs = SEED_DIFFS_AZURE;
