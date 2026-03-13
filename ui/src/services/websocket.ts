@@ -27,11 +27,12 @@ export class CloudShiftWebSocket {
   private buildUrl(): string {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     let url = `${proto}//${window.location.host}${this.path}`;
-    const apiKey =
+    const raw =
       useAuthStore.getState().apiKey ??
-      (typeof window !== "undefined" && (window as unknown as { __CLOUDSHIFT_API_KEY__?: string }).__CLOUDSHIFT_API_KEY__);
-    if (apiKey?.trim()) {
-      url += (url.includes("?") ? "&" : "?") + "api_key=" + encodeURIComponent(apiKey.trim());
+      (typeof window !== "undefined" ? (window as unknown as { __CLOUDSHIFT_API_KEY__?: string }).__CLOUDSHIFT_API_KEY__ : null);
+    const apiKey = typeof raw === "string" ? raw.trim() : "";
+    if (apiKey) {
+      url += (url.includes("?") ? "&" : "?") + "api_key=" + encodeURIComponent(apiKey);
     }
     return url;
   }
