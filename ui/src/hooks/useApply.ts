@@ -16,7 +16,8 @@ function mapApplyResponse(data: Record<string, unknown>): ApplyResult {
   };
 }
 
-function buildFileDiffsFromApplyResult(data: Record<string, unknown>): FileDiff[] {
+/** Exported for unit tests. */
+export function buildFileDiffsFromApplyResult(data: Record<string, unknown>): FileDiff[] {
   const details = data.modified_file_details as Array<{ path: string; original_content: string; modified_content: string }> | undefined;
   if (!Array.isArray(details) || details.length === 0) return [];
   return details.map((f) => {

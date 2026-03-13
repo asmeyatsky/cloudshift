@@ -1076,7 +1076,7 @@ class TestValidationDataclasses:
 
 
 class TestScanProjectUseCaseAdditional:
-    async def test_scan_file_exception_is_gathered(self):
+    async def test_scan_file_exception_is_gathered(self, tmp_path):
         """When _scan_file raises, gather returns the exception and it's skipped."""
         fs = AsyncMock()
         parser = AsyncMock()
@@ -1092,7 +1092,7 @@ class TestScanProjectUseCaseAdditional:
         from cloudshift.application.dtos.scan import ScanRequest
         result = await uc.execute(
             ScanRequest(
-                root_path="/project",
+                root_path=str(tmp_path),
                 source_provider=CloudProvider.AWS,
                 target_provider=CloudProvider.GCP,
             )
@@ -1103,7 +1103,7 @@ class TestScanProjectUseCaseAdditional:
         assert result.total_files_scanned == 2
         assert len(result.files) == 1
 
-    async def test_scan_file_no_detections_returns_none(self):
+    async def test_scan_file_no_detections_returns_none(self, tmp_path):
         """When detector returns empty list, the file is skipped."""
         fs = AsyncMock()
         parser = AsyncMock()
@@ -1118,7 +1118,7 @@ class TestScanProjectUseCaseAdditional:
         from cloudshift.application.dtos.scan import ScanRequest
         result = await uc.execute(
             ScanRequest(
-                root_path="/project",
+                root_path=str(tmp_path),
                 source_provider=CloudProvider.AWS,
                 target_provider=CloudProvider.GCP,
             )
@@ -1126,7 +1126,7 @@ class TestScanProjectUseCaseAdditional:
 
         assert len(result.files) == 0
 
-    async def test_scan_with_event_bus(self):
+    async def test_scan_with_event_bus(self, tmp_path):
         """Event bus gets called for ScanStarted and ScanCompleted."""
         fs = AsyncMock()
         parser = AsyncMock()
@@ -1139,7 +1139,7 @@ class TestScanProjectUseCaseAdditional:
         from cloudshift.application.dtos.scan import ScanRequest
         await uc.execute(
             ScanRequest(
-                root_path="/project",
+                root_path=str(tmp_path),
                 source_provider=CloudProvider.AWS,
                 target_provider=CloudProvider.GCP,
             )
@@ -1161,8 +1161,8 @@ class TestApplyTransformationUseCaseAdditional:
         diff_engine = AsyncMock()
         event_bus = AsyncMock()
 
-        step1 = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=[])
-        step2 = SimpleNamespace(step_id="s2", file_path="b.py", pattern_id="p2", depends_on=[])
+        step1 = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=[], language=Language.PYTHON)
+        step2 = SimpleNamespace(step_id="s2", file_path="b.py", pattern_id="p2", depends_on=[], language=Language.PYTHON)
         plan = SimpleNamespace(plan_id="plan1", steps=[step1, step2])
         plan_store.get_plan.return_value = plan
 
@@ -1192,7 +1192,8 @@ class TestApplyTransformationUseCaseAdditional:
 
         step = SimpleNamespace(
             step_id="s2", file_path="a.py", pattern_id="p1",
-            depends_on=["s1"]  # s1 doesn't exist.
+            depends_on=["s1"],  # s1 doesn't exist.
+            language=Language.PYTHON,
         )
         plan = SimpleNamespace(plan_id="plan1", steps=[step])
         plan_store.get_plan.return_value = plan
@@ -1209,7 +1210,7 @@ class TestApplyTransformationUseCaseAdditional:
         fs = AsyncMock()
         diff_engine = AsyncMock()
 
-        step = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=[])
+        step = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=[], language=Language.PYTHON)
         plan = SimpleNamespace(plan_id="plan1", steps=[step])
         plan_store.get_plan.return_value = plan
 
@@ -1227,7 +1228,7 @@ class TestApplyTransformationUseCaseAdditional:
         fs = AsyncMock()
         diff_engine = AsyncMock()
 
-        step = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=[])
+        step = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=[], language=Language.PYTHON)
         plan = SimpleNamespace(plan_id="plan1", steps=[step])
         plan_store.get_plan.return_value = plan
 
@@ -1264,9 +1265,9 @@ class TestApplyTransformationUseCaseAdditional:
         # emit is not called when plan is not found (returns early).
 
     async def test_topological_sort_with_dependencies(self):
-        step1 = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=[])
-        step2 = SimpleNamespace(step_id="s2", file_path="a.py", pattern_id="p2", depends_on=["s1"])
-        step3 = SimpleNamespace(step_id="s3", file_path="b.py", pattern_id="p3", depends_on=["s1", "s2"])
+        step1 = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=[], language=Language.PYTHON)
+        step2 = SimpleNamespace(step_id="s2", file_path="a.py", pattern_id="p2", depends_on=["s1"], language=Language.PYTHON)
+        step3 = SimpleNamespace(step_id="s3", file_path="b.py", pattern_id="p3", depends_on=["s1", "s2"], language=Language.PYTHON)
 
         ordered = ApplyTransformationUseCase._topological_sort([step3, step1, step2])
 
@@ -1275,8 +1276,8 @@ class TestApplyTransformationUseCaseAdditional:
         assert ids.index("s2") < ids.index("s3")
 
     async def test_topological_sort_cyclic(self):
-        step1 = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=["s2"])
-        step2 = SimpleNamespace(step_id="s2", file_path="a.py", pattern_id="p2", depends_on=["s1"])
+        step1 = SimpleNamespace(step_id="s1", file_path="a.py", pattern_id="p1", depends_on=["s2"], language=Language.PYTHON)
+        step2 = SimpleNamespace(step_id="s2", file_path="a.py", pattern_id="p2", depends_on=["s1"], language=Language.PYTHON)
 
         # Cyclic deps: both should still appear (appended as remaining).
         ordered = ApplyTransformationUseCase._topological_sort([step1, step2])

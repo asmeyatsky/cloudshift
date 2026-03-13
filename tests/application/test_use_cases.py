@@ -61,9 +61,9 @@ from cloudshift.domain.value_objects.types import (
 # ---------------------------------------------------------------------------
 
 
-def _make_scan_request(**overrides) -> ScanRequest:
+def _make_scan_request(root_path: str | None = None, **overrides) -> ScanRequest:
     defaults = {
-        "root_path": "/project",
+        "root_path": root_path or "/project",
         "source_provider": CloudProvider.AWS,
         "target_provider": CloudProvider.GCP,
     }
@@ -88,7 +88,7 @@ class TestScanProjectUseCase:
         return fs, parser, detector, event_bus
 
     @pytest.mark.asyncio
-    async def test_scan_discovers_files_and_services(self, mocks):
+    async def test_scan_discovers_files_and_services(self, mocks, tmp_path):
         fs, parser, detector, event_bus = mocks
 
         fs.list_files.return_value = ["app.py", "infra.py"]
@@ -100,7 +100,7 @@ class TestScanProjectUseCase:
         ]
 
         uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
-        result = await uc.execute(_make_scan_request())
+        result = await uc.execute(_make_scan_request(root_path=str(tmp_path)))
 
         assert result.error is None
         assert result.total_files_scanned == 2
@@ -108,31 +108,31 @@ class TestScanProjectUseCase:
         assert "S3" in result.services_found
 
     @pytest.mark.asyncio
-    async def test_scan_returns_error_when_listing_fails(self, mocks):
+    async def test_scan_returns_error_when_listing_fails(self, mocks, tmp_path):
         fs, parser, detector, event_bus = mocks
         fs.list_files.side_effect = OSError("permission denied")
 
         uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
-        result = await uc.execute(_make_scan_request())
+        result = await uc.execute(_make_scan_request(root_path=str(tmp_path)))
 
         assert result.error is not None
         assert "permission denied" in result.error
 
     @pytest.mark.asyncio
-    async def test_scan_skips_unrecognised_language(self, mocks):
+    async def test_scan_skips_unrecognised_language(self, mocks, tmp_path):
         fs, parser, detector, event_bus = mocks
         fs.list_files.return_value = ["readme.txt"]
         fs.read_file.return_value = "hello"
         parser.detect_language.return_value = None
 
         uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
-        result = await uc.execute(_make_scan_request())
+        result = await uc.execute(_make_scan_request(root_path=str(tmp_path)))
 
         assert len(result.files) == 0
         assert result.total_files_scanned == 1
 
     @pytest.mark.asyncio
-    async def test_scan_filters_by_language(self, mocks):
+    async def test_scan_filters_by_language(self, mocks, tmp_path):
         fs, parser, detector, event_bus = mocks
         fs.list_files.return_value = ["app.py"]
         fs.read_file.return_value = "import boto3"
@@ -143,18 +143,18 @@ class TestScanProjectUseCase:
         # Request only HCL -- Python file should be filtered out.
         uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
         result = await uc.execute(
-            _make_scan_request(languages=[Language.HCL])
+            _make_scan_request(root_path=str(tmp_path), languages=[Language.HCL])
         )
 
         assert len(result.files) == 0
 
     @pytest.mark.asyncio
-    async def test_scan_empty_directory(self, mocks):
+    async def test_scan_empty_directory(self, mocks, tmp_path):
         fs, parser, detector, event_bus = mocks
         fs.list_files.return_value = []
 
         uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=event_bus)
-        result = await uc.execute(_make_scan_request())
+        result = await uc.execute(_make_scan_request(root_path=str(tmp_path)))
 
         assert result.error is None
         assert result.total_files_scanned == 0
@@ -162,13 +162,13 @@ class TestScanProjectUseCase:
         assert result.services_found == []
 
     @pytest.mark.asyncio
-    async def test_scan_without_event_bus(self, mocks):
+    async def test_scan_without_event_bus(self, mocks, tmp_path):
         """Event bus is optional; the use case must not crash when it is None."""
         fs, parser, detector, _ = mocks
         fs.list_files.return_value = []
 
         uc = ScanProjectUseCase(fs, parser, detector, allowed_paths=[Path("/")], event_bus=None)
-        result = await uc.execute(_make_scan_request())
+        result = await uc.execute(_make_scan_request(root_path=str(tmp_path)))
 
         assert result.error is None
 

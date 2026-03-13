@@ -3,7 +3,8 @@ import { planApi } from "../services/api";
 import { useProjectStore, useOperationStore } from "../store";
 import type { PlanResult } from "../types";
 
-function mapPlanResponse(data: Record<string, unknown>, jobId?: string): PlanResult {
+/** Exported for unit tests. */
+export function mapPlanResponse(data: Record<string, unknown>, jobId?: string): PlanResult {
   const steps = (data.steps as Array<Record<string, unknown>>) ?? [];
   const stepsByPatternRaw = (data.steps_by_pattern as Array<Record<string, unknown>>) ?? [];
   const planId = (data.plan_id as string) ?? "";

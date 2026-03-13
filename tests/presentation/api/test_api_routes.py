@@ -330,6 +330,36 @@ class TestApplyRoutes:
         finally:
             apply_mod._results.pop("applyres", None)
 
+    def test_get_apply_with_modified_file_details(self, client):
+        from cloudshift.presentation.api.routes import apply as apply_mod
+
+        apply_mod._results["applydetails"] = {
+            "plan_id": "plan1",
+            "applied_steps": [],
+            "diffs": [],
+            "files_modified": 1,
+            "success": True,
+            "errors": [],
+            "modified_file_details": [
+                {
+                    "path": "main.py",
+                    "original_content": "import boto3",
+                    "modified_content": "from google.cloud import storage",
+                    "language": "python",
+                },
+            ],
+        }
+        try:
+            resp = client.get("/api/apply/applydetails")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["modified_file_details"] is not None
+            assert len(data["modified_file_details"]) == 1
+            assert data["modified_file_details"][0]["path"] == "main.py"
+            assert data["modified_file_details"][0]["modified_content"] == "from google.cloud import storage"
+        finally:
+            apply_mod._results.pop("applydetails", None)
+
 
 # ===================================================================
 # 5. Validate routes
