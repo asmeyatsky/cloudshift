@@ -1,10 +1,28 @@
-.vscode/**
-.vscode-test/**
-src/**
-node_modules/**
+# Exclude parent/sibling dirs (vsce can include them in workspace setups)
+../
+../*
+
+# Dependencies and dev
+node_modules
+**/node_modules/**
+
+# Source (we ship only out/)
+src
+**/*.ts
 tsconfig.json
 esbuild.js
+
+# Build artifacts not needed at runtime
+*.map
+out/*.map
+
+# Git and IDE
+.git
 .gitignore
-**/*.map
-**/*.ts
-!out/extension.js
+.vscode
+*.md
+!README.md
+
+# Misc
+.DS_Store
+*.vsix

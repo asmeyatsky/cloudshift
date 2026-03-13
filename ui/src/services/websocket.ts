@@ -1,10 +1,13 @@
 import type { WSMessage } from "../types";
+import { useAuthStore } from "../store/authStore";
 
 export type WSListener = (message: WSMessage) => void;
 
 /**
  * Lightweight WebSocket client for streaming progress updates from the
  * CloudShift backend.  Supports auto-reconnection with exponential backoff.
+ * When auth is searce_id and no IAP, the browser cannot set headers on WS;
+ * the API key is passed via query param (read at connect time).
  */
 export class CloudShiftWebSocket {
   private ws: WebSocket | null = null;
@@ -12,12 +15,25 @@ export class CloudShiftWebSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
   private maxReconnectDelay = 30000;
+  private maxReconnectAttempts = 5;
+  private reconnectAttempts = 0;
   private shouldReconnect = true;
-  private url: string;
+  private readonly path: string;
 
   constructor(path = "/ws/progress") {
+    this.path = path;
+  }
+
+  private buildUrl(): string {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    this.url = `${proto}//${window.location.host}${path}`;
+    let url = `${proto}//${window.location.host}${this.path}`;
+    const apiKey =
+      useAuthStore.getState().apiKey ??
+      (typeof window !== "undefined" && (window as unknown as { __CLOUDSHIFT_API_KEY__?: string }).__CLOUDSHIFT_API_KEY__);
+    if (apiKey?.trim()) {
+      url += (url.includes("?") ? "&" : "?") + "api_key=" + encodeURIComponent(apiKey.trim());
+    }
+    return url;
   }
 
   /* -------------------------------------------------------------- */
@@ -26,6 +42,7 @@ export class CloudShiftWebSocket {
 
   connect(): void {
     this.shouldReconnect = true;
+    this.reconnectAttempts = 0;
     this.createConnection();
   }
 
@@ -67,10 +84,11 @@ export class CloudShiftWebSocket {
       this.ws.close();
     }
 
-    this.ws = new WebSocket(this.url);
+    this.ws = new WebSocket(this.buildUrl());
 
     this.ws.onopen = () => {
       this.reconnectDelay = 1000;
+      this.reconnectAttempts = 0;
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
@@ -95,6 +113,10 @@ export class CloudShiftWebSocket {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
+    this.reconnectAttempts += 1;
+    if (this.reconnectAttempts > this.maxReconnectAttempts) {
+      return;
+    }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.reconnectDelay = Math.min(

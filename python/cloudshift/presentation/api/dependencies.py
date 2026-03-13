@@ -57,8 +57,18 @@ async def verify_auth(request: Request):
         )
     mode: AuthMode = getattr(settings, "auth_mode", "api_key") or "api_key"
 
+    # Allow API key from query (e.g. WebSocket upgrade; browser cannot set headers on WS)
+    def _get_api_key(req: Request) -> str:
+        h = (req.headers.get("X-API-Key") or "").strip()
+        if h:
+            return h
+        q = getattr(req, "query_params", None)
+        if q is not None:
+            return (q.get("api_key") or "").strip()
+        return ""
+
     if mode == "api_key":
-        api_key = request.headers.get("X-API-Key") or ""
+        api_key = _get_api_key(request)
         if not getattr(settings, "api_key", None):
             return
         if api_key != settings.api_key:
@@ -73,7 +83,7 @@ async def verify_auth(request: Request):
         iap_jwt = request.headers.get("X-Goog-IAP-JWT-Assertion")
         searce_id = request.headers.get("X-Searce-ID")
         token = _get_bearer_token(request)
-        api_key = request.headers.get("X-API-Key") or ""
+        api_key = _get_api_key(request)
         if iap_jwt or searce_id or token:
             return
         if getattr(settings, "api_key", None) and api_key == settings.api_key:
