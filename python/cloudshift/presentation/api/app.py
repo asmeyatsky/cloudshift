@@ -79,7 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(validate.router, dependencies=protected_deps)
     app.include_router(patterns.router, dependencies=protected_deps)
     app.include_router(report.router, dependencies=protected_deps)
-    app.include_router(config.router, dependencies=protected_deps)
+    app.include_router(config.router)  # /api/config/llm is public for deploy verification
     app.include_router(projects.router, dependencies=protected_deps)
     app.include_router(ws_router, dependencies=protected_deps)
 

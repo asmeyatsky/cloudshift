@@ -69,15 +69,21 @@ jobs:
           echo "GEMINI_API_KEY is set."
 
       # Use env file (YAML) so API keys with commas/special chars are not mangled by comma-separated --set-env-vars
+      # Trim key so pasted secrets with trailing newlines still work
       - name: Deploy to Cloud Run
         run: |
           IMAGE_TAG="${{ steps.build.outputs.IMAGE_TAG }}"
           IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/cloudshift/cloudshift:${IMAGE_TAG}"
+          GEMINI_KEY="${{ secrets.GEMINI_API_KEY }}"
+          GEMINI_KEY=$(echo "$GEMINI_KEY" | tr -d '\n\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          if [ -z "${GEMINI_KEY}" ]; then
+            echo "::error::GEMINI_API_KEY is empty after trim. Set a non-empty key in Settings → Secrets → Actions."
+            exit 1
+          fi
           ENV_FILE=$(mktemp).yaml
           {
-            echo "CLOUDSHIFT_LLM_ENABLED: \"false\""
             echo "CLOUDSHIFT_DEPLOYMENT_MODE: \"demo\""
-            echo "CLOUDSHIFT_GEMINI_API_KEY: \"${{ secrets.GEMINI_API_KEY }}\""
+            echo "CLOUDSHIFT_GEMINI_API_KEY: \"${GEMINI_KEY}\""
             if [ -n "${{ secrets.CLOUDSHIFT_API_KEY }}" ]; then
               echo "CLOUDSHIFT_AUTH_MODE: \"searce_id\""
               echo "CLOUDSHIFT_API_KEY: \"${{ secrets.CLOUDSHIFT_API_KEY }}\""
@@ -101,9 +107,24 @@ jobs:
             --project=${{ env.GCP_PROJECT_ID }}
 
       - name: Output service URL
+        id: url
         run: |
           URL=$(gcloud run services describe ${{ env.CLOUD_RUN_SERVICE }} \
             --region=${{ env.GCP_REGION }} \
             --format='value(status.url)' \
             --project=${{ env.GCP_PROJECT_ID }})
+          echo "url=${URL}" >> $GITHUB_OUTPUT
           echo "Cloud Run service URL: ${URL}"
+
+      - name: Verify LLM is configured (prevent 503 on refactor)
+        run: |
+          URL="${{ steps.url.outputs.url }}"
+          RESP=$(curl -sS "${URL}/api/config/llm")
+          echo "LLM diagnostic: $RESP"
+          GEMINI=$(echo "$RESP" | jq -r '.gemini_configured')
+          LLM_TYPE=$(echo "$RESP" | jq -r '.llm_type')
+          if [ "$GEMINI" != "true" ] || [ "$LLM_TYPE" != "GeminiAdapter" ]; then
+            echo "::error::LLM not configured: gemini_configured=$GEMINI llm_type=$LLM_TYPE. Refactor will return 503. Check GEMINI_API_KEY secret and redeploy."
+            exit 1
+          fi
+          echo "LLM configured (llm_type=$LLM_TYPE). Refactor will not 503."
