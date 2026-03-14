@@ -650,6 +650,18 @@ export const SEED_REFACTOR_SUMMARY = {
   llmCount: 2,
   skipped: 4,
   llmConfigured: true,
+  servicesMigrated: [
+    { source: "s3", target: "Cloud Storage (GCS)" },
+    { source: "lambda", target: "Cloud Functions" },
+    { source: "dynamodb", target: "Firestore" },
+    { source: "sqs", target: "Cloud Tasks / Pub/Sub" },
+    { source: "sns", target: "Pub/Sub" },
+    { source: "secretsmanager", target: "Secret Manager" },
+  ],
+  packageChanges: {
+    remove: ["boto3"],
+    install: ["google-cloud-storage", "google-cloud-firestore", "google-cloud-pubsub", "google-cloud-secret-manager", "functions-framework"],
+  },
 };
 
 export const SEED_REFACTOR_SUMMARY_AZURE = {
@@ -659,6 +671,15 @@ export const SEED_REFACTOR_SUMMARY_AZURE = {
   llmCount: 1,
   skipped: 2,
   llmConfigured: true,
+  servicesMigrated: [
+    { source: "blob_storage", target: "Cloud Storage (GCS)" },
+    { source: "functions", target: "Cloud Functions" },
+    { source: "identity", target: "IAM / Service Accounts" },
+  ],
+  packageChanges: {
+    remove: ["azure-storage-blob", "azure-functions", "azure-identity"],
+    install: ["google-cloud-storage", "google-auth", "functions-framework"],
+  },
 };
 
 /* ------------------------------------------------------------------ */

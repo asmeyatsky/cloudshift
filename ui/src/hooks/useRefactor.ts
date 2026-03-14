@@ -100,6 +100,8 @@ export function useRefactor() {
               llmCount: event.llm_count as number,
               skipped: event.skipped as number,
               llmConfigured: event.llm_configured as boolean,
+              servicesMigrated: (event.services_migrated as Array<{source: string; target: string}>) ?? [],
+              packageChanges: (event.package_changes as {remove: string[]; install: string[]}) ?? {remove: [], install: []},
             });
           } else if (eventType === "error") {
             throw new Error(event.message as string);

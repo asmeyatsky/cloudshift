@@ -28,6 +28,91 @@ from cloudshift.presentation.api.schemas import (
 router = APIRouter(prefix="/api/refactor", tags=["refactor"])
 
 
+def _detect_services(content: str, source_provider: str) -> list[str]:
+    """Detect cloud services used in source code by looking for common API patterns."""
+    services = []
+    upper = source_provider.upper()
+    if upper == "AWS":
+        checks = [
+            ("s3", ["boto3.client('s3')", 'boto3.client("s3")', "boto3.resource('s3')", 'boto3.resource("s3")', "s3_client", "s3_resource"]),
+            ("lambda", ["boto3.client('lambda')", 'boto3.client("lambda")', "lambda_client", "handler(event"]),
+            ("dynamodb", ["boto3.client('dynamodb')", "boto3.resource('dynamodb')", "dynamodb", ".Table("]),
+            ("sqs", ["boto3.client('sqs')", "sqs_client", "send_message", "receive_message", "QueueUrl"]),
+            ("sns", ["boto3.client('sns')", "sns_client", "TopicArn", ".publish("]),
+            ("secretsmanager", ["boto3.client('secretsmanager')", "get_secret_value", "SecretId"]),
+            ("ec2", ["boto3.client('ec2')", "boto3.resource('ec2')", "ec2_client"]),
+            ("ecs", ["boto3.client('ecs')", "ecs_client"]),
+            ("rds", ["boto3.client('rds')", "rds_client"]),
+            ("cloudwatch", ["boto3.client('cloudwatch')", "put_metric", "cloudwatch"]),
+            ("iam", ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "assume_role"]),
+        ]
+    elif upper == "AZURE":
+        checks = [
+            ("blob_storage", ["BlobServiceClient", "ContainerClient", "blob_client", "upload_blob", "download_blob"]),
+            ("cosmos_db", ["CosmosClient", "cosmos_client", "read_item", "create_item", "query_items"]),
+            ("service_bus", ["ServiceBusClient", "ServiceBusMessage", "send_messages", "receive_messages"]),
+            ("key_vault", ["SecretClient", "vault_url", "get_secret", "set_secret"]),
+            ("functions", ["azure.functions", "HttpRequest", "HttpResponse", "func.HttpRequest"]),
+            ("event_hubs", ["EventHubProducerClient", "EventHubConsumerClient", "EventData"]),
+            ("sql", ["pyodbc", "azure.sql", "mssql"]),
+            ("identity", ["DefaultAzureCredential", "ManagedIdentityCredential"]),
+        ]
+    else:
+        return []
+    for service, patterns in checks:
+        if any(p in content for p in patterns):
+            services.append(service)
+    return services
+
+
+# Map source services to GCP equivalents
+_SERVICE_MAP = {
+    # AWS
+    "s3": "Cloud Storage (GCS)",
+    "lambda": "Cloud Functions",
+    "dynamodb": "Firestore",
+    "sqs": "Cloud Tasks / Pub/Sub",
+    "sns": "Pub/Sub",
+    "secretsmanager": "Secret Manager",
+    "ec2": "Compute Engine",
+    "ecs": "Cloud Run",
+    "rds": "Cloud SQL",
+    "cloudwatch": "Cloud Monitoring",
+    "iam": "IAM / Service Accounts",
+    # Azure
+    "blob_storage": "Cloud Storage (GCS)",
+    "cosmos_db": "Firestore",
+    "service_bus": "Pub/Sub",
+    "key_vault": "Secret Manager",
+    "functions": "Cloud Functions",
+    "event_hubs": "Pub/Sub",
+    "sql": "Cloud SQL",
+    "identity": "IAM / Service Accounts",
+}
+
+_PACKAGE_MAP = {
+    # AWS
+    "s3": {"remove": ["boto3"], "install": ["google-cloud-storage"]},
+    "lambda": {"remove": [], "install": ["functions-framework"]},
+    "dynamodb": {"remove": ["boto3"], "install": ["google-cloud-firestore"]},
+    "sqs": {"remove": ["boto3"], "install": ["google-cloud-tasks", "google-cloud-pubsub"]},
+    "sns": {"remove": ["boto3"], "install": ["google-cloud-pubsub"]},
+    "secretsmanager": {"remove": ["boto3"], "install": ["google-cloud-secret-manager"]},
+    "ec2": {"remove": ["boto3"], "install": ["google-cloud-compute"]},
+    "rds": {"remove": ["boto3"], "install": ["cloud-sql-python-connector"]},
+    "cloudwatch": {"remove": ["boto3"], "install": ["google-cloud-monitoring"]},
+    # Azure
+    "blob_storage": {"remove": ["azure-storage-blob"], "install": ["google-cloud-storage"]},
+    "cosmos_db": {"remove": ["azure-cosmos"], "install": ["google-cloud-firestore"]},
+    "service_bus": {"remove": ["azure-servicebus"], "install": ["google-cloud-pubsub"]},
+    "key_vault": {"remove": ["azure-keyvault-secrets", "azure-identity"], "install": ["google-cloud-secret-manager"]},
+    "functions": {"remove": ["azure-functions"], "install": ["functions-framework"]},
+    "event_hubs": {"remove": ["azure-eventhub"], "install": ["google-cloud-pubsub"]},
+    "sql": {"remove": ["pyodbc"], "install": ["cloud-sql-python-connector"]},
+    "identity": {"remove": ["azure-identity"], "install": ["google-auth"]},
+}
+
+
 def _infer_language(file_path: str) -> Language:
     ext = (Path(file_path).suffix or "").lstrip(".").lower()
     if ext in ("py",):
@@ -361,6 +446,7 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
     pattern_count = 0
     llm_count = 0
     skipped_count = 0
+    all_services: set[str] = set()
 
     for idx, file_path in enumerate(scannable):
         rel_path = str(Path(file_path).relative_to(root)) if file_path.startswith(str(root)) else file_path
@@ -374,6 +460,9 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
             skipped_count += 1
             yield json.dumps({"type": "file_result", "file": rel_path, "changed": False, "method": "skipped"}) + "\n"
             continue
+
+        # Detect cloud services in the source content
+        file_services = _detect_services(content, body.source_provider)
 
         method = "skipped"
         modified = None
@@ -406,6 +495,7 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
                 pattern_count += 1
             elif method == "llm":
                 llm_count += 1
+            all_services.update(file_services)
             yield json.dumps({
                 "type": "file_result",
                 "file": rel_path,
@@ -413,6 +503,8 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
                 "modified": modified,
                 "changed": True,
                 "method": method,
+                "services": file_services,
+                "confidence": 0.85 if method == "pattern" else 0.70,
             }) + "\n"
         else:
             skipped_count += 1
@@ -420,6 +512,15 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
 
         # Yield control so the event loop stays responsive
         await asyncio.sleep(0)
+
+    # Build package change sets from detected services
+    remove_set: set[str] = set()
+    install_set: set[str] = set()
+    for svc in all_services:
+        pkg = _PACKAGE_MAP.get(svc)
+        if pkg:
+            remove_set.update(pkg["remove"])
+            install_set.update(pkg["install"])
 
     yield json.dumps({
         "type": "complete",
@@ -429,6 +530,8 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
         "llm_count": llm_count,
         "skipped": skipped_count,
         "llm_configured": _is_llm_configured(container),
+        "services_migrated": [{"source": svc, "target": _SERVICE_MAP.get(svc, "?")} for svc in sorted(all_services)],
+        "package_changes": {"remove": sorted(remove_set), "install": sorted(install_set)},
     }) + "\n"
 
 

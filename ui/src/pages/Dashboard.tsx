@@ -13,6 +13,8 @@ import {
   Activity,
   RotateCcw,
   ShieldCheck,
+  Package,
+  ArrowRightLeft,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import {
@@ -465,6 +467,66 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
+          {/* Migration Insights */}
+          {isDone && refactorSummary && (refactorSummary.servicesMigrated.length > 0 || refactorSummary.packageChanges.install.length > 0) && (
+            <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {/* Services Migrated */}
+              {refactorSummary.servicesMigrated.length > 0 && (
+                <div className="rounded-2xl border border-white/[0.06] bg-surface-50 p-6">
+                  <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-gray-500">
+                    <ArrowRightLeft className="h-4 w-4" />
+                    Services Migrated
+                  </h3>
+                  <div className="space-y-2">
+                    {refactorSummary.servicesMigrated.map((svc) => (
+                      <div key={svc.source} className="flex items-center gap-3 rounded-lg bg-surface-100/50 px-4 py-2.5">
+                        <span className="font-mono text-xs font-medium text-primary-400">{svc.source}</span>
+                        <ArrowRight className="h-3.5 w-3.5 text-gray-600" />
+                        <span className="font-mono text-xs font-medium text-accent-green">{svc.target}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Package Changes */}
+              {(refactorSummary.packageChanges.remove.length > 0 || refactorSummary.packageChanges.install.length > 0) && (
+                <div className="rounded-2xl border border-white/[0.06] bg-surface-50 p-6">
+                  <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-gray-500">
+                    <Package className="h-4 w-4" />
+                    Package Changes
+                  </h3>
+                  <div className="space-y-3">
+                    {refactorSummary.packageChanges.remove.length > 0 && (
+                      <div>
+                        <p className="mb-2 text-xs font-medium text-red-400/80">Remove</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {refactorSummary.packageChanges.remove.map((pkg) => (
+                            <span key={pkg} className="rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1 font-mono text-xs text-red-300">
+                              {pkg}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {refactorSummary.packageChanges.install.length > 0 && (
+                      <div>
+                        <p className="mb-2 text-xs font-medium text-accent-green/80">Install</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {refactorSummary.packageChanges.install.map((pkg) => (
+                            <span key={pkg} className="rounded-md border border-accent-green/20 bg-accent-green/10 px-2 py-1 font-mono text-xs text-accent-green/90">
+                              {pkg}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid flex-1 grid-cols-1 gap-8 lg:grid-cols-3">
             {/* Stats */}

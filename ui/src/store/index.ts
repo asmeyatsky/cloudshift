@@ -165,6 +165,8 @@ interface RefactorSummary {
   llmCount: number;
   skipped: number;
   llmConfigured: boolean;
+  servicesMigrated: Array<{source: string; target: string}>;
+  packageChanges: {remove: string[]; install: string[]};
 }
 
 interface OperationState {
