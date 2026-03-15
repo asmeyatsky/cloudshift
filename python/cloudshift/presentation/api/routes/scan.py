@@ -133,8 +133,15 @@ async def estimate_repo_size(
     """Return file counts and estimated plan time. Path must be under allowed_scan_paths."""
     from cloudshift.infrastructure.config.dependency_injection import GIT_IMPORT_BASE
 
+    raw_path = body.root_path
+    # Resolve __demo__/ prefix to the demos/ directory
+    if raw_path and raw_path.startswith("__demo__/"):
+        demo_rel = raw_path[len("__demo__/"):]
+        project_root = Path(__file__).resolve().parents[5]
+        raw_path = str(project_root / "demos" / demo_rel)
+
     try:
-        root = Path(body.root_path).resolve()
+        root = Path(raw_path).resolve()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid path: {e}") from e
 
@@ -142,6 +149,10 @@ async def estimate_repo_size(
     allowed = list(getattr(settings, "allowed_scan_paths", [Path(".")])) if settings else [Path(".")]
     if GIT_IMPORT_BASE not in allowed:
         allowed.append(GIT_IMPORT_BASE)
+    # Also allow the demos/ directory for __demo__ paths
+    demos_dir = Path(__file__).resolve().parents[5] / "demos"
+    if demos_dir not in allowed:
+        allowed.append(demos_dir)
     allowed_resolved = [p.resolve() for p in allowed]
     if not any(root == p or p in root.parents for p in allowed_resolved):
         raise HTTPException(
