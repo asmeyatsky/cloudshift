@@ -28,12 +28,6 @@ import {
 } from "../store";
 import { useAuthStore } from "../store/authStore";
 import ImportProjectModal from "./ImportProjectModal";
-import {
-  SEED_DIFFS,
-  SEED_DIFFS_AZURE,
-  SEED_REFACTOR_SUMMARY,
-  SEED_REFACTOR_SUMMARY_AZURE,
-} from "../seed";
 
 const NAV_ITEMS = [
   { to: "/", icon: LayoutDashboard, label: "Refactor" },
@@ -53,8 +47,6 @@ export default function Layout() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const resetOps = useOperationStore((s) => s.reset);
-  const setDiffs = useOperationStore((s) => s.setDiffs);
-  const setRefactorSummary = useOperationStore((s) => s.setRefactorSummary);
   const setEntries = useManifestStore((s) => s.setEntries);
   const setValidationResult = useValidationStore((s) => s.setResult);
 
@@ -74,13 +66,6 @@ export default function Layout() {
       setValidationResult(null);
       setEntries([]);
       setActiveProject(proj);
-      if (proj.id === "demo-aws") {
-        setDiffs(SEED_DIFFS);
-        setRefactorSummary(SEED_REFACTOR_SUMMARY);
-      } else if (proj.id === "demo-azure") {
-        setDiffs(SEED_DIFFS_AZURE);
-        setRefactorSummary(SEED_REFACTOR_SUMMARY_AZURE);
-      }
     }
     setProjectDropdownOpen(false);
   };

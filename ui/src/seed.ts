@@ -24,7 +24,7 @@ const DEMO_CONFIG = {
 export const SEED_PROJECT_AWS: Project = {
   id: "demo-aws",
   name: "AWS Demo",
-  path: "demos/aws_python_microservice/input",
+  path: "__demo__/aws_python_microservice/input",
   sourceProvider: "aws",
   targetProvider: "gcp",
   config: { ...DEMO_CONFIG },
@@ -35,7 +35,7 @@ export const SEED_PROJECT_AWS: Project = {
 export const SEED_PROJECT_AZURE: Project = {
   id: "demo-azure",
   name: "Azure Demo",
-  path: "demos/azure_python_webapp/input",
+  path: "__demo__/azure_python_webapp/input",
   sourceProvider: "azure",
   targetProvider: "gcp",
   config: { ...DEMO_CONFIG },

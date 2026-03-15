@@ -137,6 +137,113 @@ def _provider_enum(provider: str) -> CloudProvider | None:
         return None
 
 
+import re as _re
+
+# ── Fast Python-level pattern replacements (no Rust FFI) ──────────────
+# Used by the streaming /project endpoint; the /file endpoint still uses the Rust engine.
+_AWS_REPLACEMENTS: list[tuple[str, str, str]] = [
+    # Imports
+    (r'^import boto3$', 'from google.cloud import storage, firestore', 'import'),
+    (r'^from boto3\..*', '# removed boto3 import (replaced with google-cloud)', 'import'),
+    # S3 client
+    (r'''boto3\.client\(["']s3["']\)''', 'storage.Client()', 'client'),
+    (r'''boto3\.resource\(["']s3["']\)''', 'storage.Client()', 'client'),
+    (r's3_client\.get_object\(Bucket=([^,]+),\s*Key=([^)]+)\)', r'storage.Client().bucket(\1).blob(\2).download_as_bytes()', 'api'),
+    (r's3_client\.put_object\(\s*Bucket=([^,]+),\s*Key=([^,]+),\s*Body=([^,)]+)(?:,[^)]*)*\)', r'storage.Client().bucket(\1).blob(\2).upload_from_string(\3)', 'api'),
+    (r's3_client\.list_buckets\(\)', 'list(storage.Client().list_buckets())', 'api'),
+    # DynamoDB
+    (r'''boto3\.resource\(["']dynamodb["']\)''', 'firestore.Client()', 'client'),
+    (r'\.Table\(([^)]+)\)', r'.collection(\1)', 'api'),
+    (r'\.put_item\(Item=([^)]+)\)', r'.add(\1)', 'api'),
+    (r'\.get_item\(Key=([^)]+)\)', r'.document(\1).get()', 'api'),
+    (r'\.delete_item\(Key=([^)]+)\)', r'.document(\1).delete()', 'api'),
+    # Lambda handler
+    (r'def handler\(event, context\)', 'def main(request)', 'function'),
+    # SQS
+    (r'''boto3\.client\(["']sqs["']\)''', 'pubsub_v1.PublisherClient()', 'client'),
+    (r'sqs_client\.send_message\(', '# TODO: pubsub publish(', 'api'),
+    (r'sqs_client\.receive_message\(', '# TODO: pubsub pull(', 'api'),
+    # SNS
+    (r'''boto3\.client\(["']sns["']\)''', 'pubsub_v1.PublisherClient()', 'client'),
+    (r'sns_client\.publish\(', '# TODO: pubsub publish(', 'api'),
+    # Secrets Manager
+    (r'''boto3\.client\(["']secretsmanager["']\)''', 'secretmanager.SecretManagerServiceClient()', 'client'),
+    # General
+    (r'AWS_ACCESS_KEY_ID', 'GOOGLE_APPLICATION_CREDENTIALS', 'config'),
+    (r'AWS_SECRET_ACCESS_KEY', '# use Application Default Credentials', 'config'),
+    (r'aws_access_key_id', 'google_application_credentials', 'config'),
+]
+
+_AZURE_REPLACEMENTS: list[tuple[str, str, str]] = [
+    # Blob Storage
+    (r'from azure\.storage\.blob import .*', 'from google.cloud import storage', 'import'),
+    (r'from azure\.identity import .*', 'import google.auth', 'import'),
+    (r'BlobServiceClient\([^)]*\)', 'storage.Client()', 'client'),
+    (r'\.get_container_client\(([^)]+)\)', r'.bucket(\1)', 'api'),
+    (r'\.get_blob_client\(([^)]+)\)', r'.blob(\1)', 'api'),
+    (r'\.upload_blob\(([^,)]+)(?:,[^)]*)*\)', r'.upload_from_string(\1)', 'api'),
+    (r'\.download_blob\(\)', '.download_as_bytes()', 'api'),
+    (r'\.list_blobs\(([^)]*)\)', r'.list_blobs(prefix=\1)', 'api'),
+    (r'\.delete_blob\(\)', '.delete()', 'api'),
+    # Cosmos DB
+    (r'from azure\.cosmos import .*', 'from google.cloud import firestore', 'import'),
+    (r'CosmosClient\([^)]*\)', 'firestore.Client()', 'client'),
+    # Key Vault
+    (r'from azure\.keyvault\.secrets import .*', 'from google.cloud import secretmanager', 'import'),
+    (r'SecretClient\([^)]*\)', 'secretmanager.SecretManagerServiceClient()', 'client'),
+    # Service Bus
+    (r'from azure\.servicebus import .*', 'from google.cloud import pubsub_v1', 'import'),
+    (r'ServiceBusClient\([^)]*\)', 'pubsub_v1.PublisherClient()', 'client'),
+    # Identity
+    (r'DefaultAzureCredential\(\)', 'google.auth.default()', 'auth'),
+    (r'ManagedIdentityCredential\(\)', 'google.auth.default()', 'auth'),
+]
+
+_TF_REPLACEMENTS: list[tuple[str, str, str]] = [
+    (r'provider\s+"aws"', 'provider "google"', 'provider'),
+    (r'region\s*=\s*"[^"]*"', 'project = "my-gcp-project"\n  region  = "us-central1"', 'config'),
+    (r'resource\s+"aws_s3_bucket"', 'resource "google_storage_bucket"', 'resource'),
+    (r'resource\s+"aws_lambda_function"', 'resource "google_cloudfunctions_function"', 'resource'),
+    (r'resource\s+"aws_dynamodb_table"', 'resource "google_firestore_database"', 'resource'),
+    (r'resource\s+"aws_sqs_queue"', 'resource "google_pubsub_topic"', 'resource'),
+    (r'resource\s+"aws_iam_role"', 'resource "google_service_account"', 'resource'),
+    (r'resource\s+"aws_vpc"', 'resource "google_compute_network"', 'resource'),
+    (r'resource\s+"aws_subnet"', 'resource "google_compute_subnetwork"', 'resource'),
+    (r'resource\s+"aws_security_group"', 'resource "google_compute_firewall"', 'resource'),
+    (r'resource\s+"aws_instance"', 'resource "google_compute_instance"', 'resource'),
+    (r'billing_mode\s*=\s*"PAY_PER_REQUEST"', 'type = "FIRESTORE_NATIVE"', 'config'),
+    (r'hash_key\s*=\s*"([^"]*)"', '# hash_key managed by Firestore', 'config'),
+]
+
+
+def _fast_pattern_refactor(content: str, source_provider: str, file_path: str) -> str | None:
+    """Fast regex-based pattern replacement. No Rust FFI, no hanging."""
+    upper = source_provider.upper()
+    lang = _infer_language(file_path)
+
+    if lang == Language.HCL:
+        replacements = _TF_REPLACEMENTS
+    elif upper == "AWS":
+        replacements = _AWS_REPLACEMENTS
+    elif upper == "AZURE":
+        replacements = _AZURE_REPLACEMENTS
+    else:
+        return None
+
+    modified = content
+    applied = 0
+    for pattern_re, replacement, _category in replacements:
+        new_text = _re.sub(pattern_re, replacement, modified, flags=_re.MULTILINE)
+        if new_text != modified:
+            modified = new_text
+            applied += 1
+
+    if applied > 0 and modified != content:
+        logger.info("[fast-patterns] %d replacements applied for %s", applied, file_path)
+        return modified
+    return None
+
+
 async def _refactor_with_patterns(
     content: str,
     file_path: str,
@@ -144,7 +251,22 @@ async def _refactor_with_patterns(
     target_provider: str,
     container,
 ) -> str | None:
-    """Try pattern-based refactor. Returns refactored content if any pattern matched, else None."""
+    """Try fast Python regex patterns. Falls back quickly, never hangs."""
+    if _provider_enum(target_provider) != CloudProvider.GCP:
+        return None
+    return _fast_pattern_refactor(content, source_provider, file_path)
+
+
+async def _refactor_with_rust_patterns(
+    content: str,
+    file_path: str,
+    source_provider: str,
+    target_provider: str,
+    container,
+) -> str | None:
+    """Original Rust-based pattern refactor. Used by /file endpoint (VS Code).
+    WARNING: Can hang on large files. Do not use in streaming endpoint.
+    """
     src = _provider_enum(source_provider)
     tgt = _provider_enum(target_provider)
     if src is None or tgt is None:
@@ -227,7 +349,14 @@ async def _refactor_with_llm(
     target = (target_provider or "GCP").upper()
     instruction = _refactor_instruction(source, target)
     lang = _infer_language(file_path)
-    refactored = await llm.transform_code(content, instruction, lang)
+    try:
+        refactored = await asyncio.wait_for(
+            llm.transform_code(content, instruction, lang),
+            timeout=30.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("LLM transform_code timed out after 30s for %s", file_path)
+        return content
     out = (refactored or "").strip()
     if not out or out == content:
         raise ValueError(
@@ -404,8 +533,18 @@ _SCANNABLE_EXTENSIONS = frozenset(
 
 async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
     """Async generator yielding NDJSON events for project-wide refactor."""
+    logger.info("[refactor-stream] STARTING: project_id=%s root_path=%s", body.project_id, body.root_path)
     # Resolve root_path from project_id or body.root_path
     root_path = body.root_path
+
+    # Resolve __demo__/ prefix to the demos/ directory relative to the project root
+    if root_path and root_path.startswith("__demo__/"):
+        demo_rel = root_path[len("__demo__/"):]
+        # Walk up from this file to find the project root (where demos/ lives)
+        project_root = Path(__file__).resolve().parents[5]  # routes -> api -> presentation -> cloudshift -> python -> root
+        root_path = str(project_root / "demos" / demo_rel)
+        logger.info("Resolved demo path: %s", root_path)
+
     if not root_path:
         repo = getattr(container, "project_repository", None)
         if repo is None:
@@ -418,25 +557,21 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
         root_path = str(project.root_path)
 
     root = Path(root_path)
+    logger.debug("[refactor-stream] Checking dir: %s exists=%s", root_path, root.is_dir())
     if not root.is_dir():
         yield json.dumps({"type": "error", "message": f"Directory not found: {root_path}"}) + "\n"
         return
 
-    # Walk directory for scannable files
-    walker = getattr(container, "walker", None)
-    if walker is not None:
-        try:
-            all_files = walker.walk_directory(str(root))
-        except Exception:
-            all_files = [str(p) for p in root.rglob("*") if p.is_file()]
-    else:
-        all_files = [str(p) for p in root.rglob("*") if p.is_file()]
+    # Walk directory for scannable files — use simple rglob to avoid blocking Rust walker
+    all_files = [str(p) for p in root.rglob("*") if p.is_file()]
+    logger.info("[refactor-stream] Found %d total files", len(all_files))
 
     scannable = [
         f for f in all_files
         if Path(f).suffix.lstrip(".").lower() in _SCANNABLE_EXTENSIONS
     ]
     total = len(scannable)
+    logger.info("[refactor-stream] %d scannable files", total)
 
     if total == 0:
         yield json.dumps({"type": "complete", "total": 0, "changed": 0, "pattern_count": 0, "llm_count": 0, "skipped": 0, "llm_configured": _is_llm_configured(container)}) + "\n"
@@ -456,38 +591,54 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
         try:
             content = Path(file_path).read_text(encoding="utf-8", errors="replace")
         except Exception as exc:
-            logger.debug("Skipping unreadable file %s: %s", file_path, exc)
+            logger.warning("[refactor] Skipping unreadable %s: %s", rel_path, exc)
             skipped_count += 1
             yield json.dumps({"type": "file_result", "file": rel_path, "changed": False, "method": "skipped"}) + "\n"
             continue
 
         # Detect cloud services in the source content
         file_services = _detect_services(content, body.source_provider)
+        logger.debug("[refactor] Processing %s (%d chars, services=%s)", rel_path, len(content), file_services)
 
         method = "skipped"
         modified = None
 
         # Try pattern-based refactor
         try:
+            logger.debug("[refactor] Pattern matching %s...", rel_path)
             modified = await _refactor_with_patterns(
                 content, file_path, body.source_provider, body.target_provider, container,
             )
             if modified is not None:
                 method = "pattern"
+                logger.info("[refactor] Pattern matched for %s", rel_path)
+            else:
+                logger.debug("[refactor] No pattern match for %s", rel_path)
         except Exception as exc:
-            logger.debug("Pattern refactor error for %s: %s", file_path, exc)
+            logger.warning("[refactor] Pattern error for %s: %s", rel_path, exc, exc_info=True)
 
         # LLM fallback
         if modified is None and _is_llm_configured(container):
+            logger.debug("[refactor] Trying LLM for %s...", rel_path)
             try:
-                llm_result = await _refactor_with_llm(
-                    content, file_path, body.source_provider, body.target_provider, container,
+                llm_result = await asyncio.wait_for(
+                    _refactor_with_llm(
+                        content, file_path, body.source_provider, body.target_provider, container,
+                    ),
+                    timeout=30.0,
                 )
                 if llm_result != content:
                     modified = llm_result
                     method = "llm"
+                    logger.info("[refactor] LLM changed %s", rel_path)
+                else:
+                    logger.debug("[refactor] LLM returned unchanged for %s", rel_path)
+            except asyncio.TimeoutError:
+                logger.warning("[refactor] LLM TIMEOUT for %s", rel_path)
             except Exception as exc:
-                logger.debug("LLM refactor error for %s: %s", file_path, exc)
+                logger.warning("[refactor] LLM error for %s: %s", rel_path, exc)
+        elif modified is None:
+            logger.debug("[refactor] No LLM configured, skipping %s", rel_path)
 
         if modified is not None and modified != content:
             changed_count += 1
