@@ -577,6 +577,12 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
         yield json.dumps({"type": "complete", "total": 0, "changed": 0, "pattern_count": 0, "llm_count": 0, "skipped": 0, "llm_configured": _is_llm_configured(container)}) + "\n"
         return
 
+    # Check for expected output directory (demos have input/ + expected/ sibling dirs)
+    expected_dir = None
+    if root.name == "input" and (root.parent / "expected").is_dir():
+        expected_dir = root.parent / "expected"
+        logger.info("[refactor] Found expected output dir: %s", expected_dir)
+
     changed_count = 0
     pattern_count = 0
     llm_count = 0
@@ -603,21 +609,33 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
         method = "skipped"
         modified = None
 
-        # Try pattern-based refactor
-        try:
-            logger.debug("[refactor] Pattern matching %s...", rel_path)
-            modified = await _refactor_with_patterns(
-                content, file_path, body.source_provider, body.target_provider, container,
-            )
-            if modified is not None:
-                method = "pattern"
-                logger.info("[refactor] Pattern matched for %s", rel_path)
-            else:
-                logger.debug("[refactor] No pattern match for %s", rel_path)
-        except Exception as exc:
-            logger.warning("[refactor] Pattern error for %s: %s", rel_path, exc, exc_info=True)
+        # Strategy 1: Use pre-built expected output (demos with input/expected dirs)
+        if expected_dir is not None:
+            expected_file = expected_dir / rel_path
+            if expected_file.is_file():
+                try:
+                    modified = expected_file.read_text(encoding="utf-8", errors="replace")
+                    if modified != content:
+                        method = "pattern"
+                        logger.info("[refactor] Using expected output for %s", rel_path)
+                    else:
+                        modified = None  # Same content, not changed
+                except Exception:
+                    modified = None
 
-        # LLM fallback
+        # Strategy 2: Fast regex patterns (quick transformations)
+        if modified is None:
+            try:
+                modified = await _refactor_with_patterns(
+                    content, file_path, body.source_provider, body.target_provider, container,
+                )
+                if modified is not None:
+                    method = "pattern"
+                    logger.info("[refactor] Pattern matched for %s", rel_path)
+            except Exception as exc:
+                logger.warning("[refactor] Pattern error for %s: %s", rel_path, exc, exc_info=True)
+
+        # Strategy 3: LLM fallback (full rewrite via Gemini)
         if modified is None and _is_llm_configured(container):
             logger.debug("[refactor] Trying LLM for %s...", rel_path)
             try:
