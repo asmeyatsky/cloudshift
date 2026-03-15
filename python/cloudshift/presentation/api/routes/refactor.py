@@ -178,6 +178,20 @@ _AZURE_REPLACEMENTS: list[tuple[str, str, str]] = [
     # Blob Storage
     (r'from azure\.storage\.blob import .*', 'from google.cloud import storage', 'import'),
     (r'from azure\.identity import .*', 'import google.auth', 'import'),
+    # Catch-all for any remaining azure.* imports (core, mgmt, etc.)
+    (r'^from azure\.[^\n]* import [^\n]*$', '# removed Azure import (replaced with google-cloud)', 'import'),
+    (r'^import azure\.[^\n]*$', '# removed Azure import (replaced with google-cloud)', 'import'),
+    # Azure URLs
+    (r'''["']https?://[^"']*\.blob\.core\.windows\.net["']''', '"https://storage.googleapis.com"  # GCS endpoint', 'config'),
+    (r'''["']https?://[^"']*\.vault\.azure\.net["']''', '"https://secretmanager.googleapis.com"  # Secret Manager endpoint', 'config'),
+    (r'''["']https?://[^"']*\.documents\.azure\.com["']''', '"https://firestore.googleapis.com"  # Firestore endpoint', 'config'),
+    (r'''["']https?://[^"']*\.servicebus\.windows\.net["']''', '"https://pubsub.googleapis.com"  # Pub/Sub endpoint', 'config'),
+    # Azure-specific classes/policies (UserAgentPolicy, RetryPolicy, etc.)
+    (r'^class \w+\(UserAgentPolicy\):.*(?:\n(?:[ \t]+.*))*', '# Azure UserAgentPolicy removed — not needed for GCS', 'class'),
+    (r'^class \w+\(.*Azure.*\):.*(?:\n(?:[ \t]+.*))*', '# Azure class removed — not needed for GCS', 'class'),
+    # account_url pattern (Azure Blob/Cosmos connection strings)
+    (r'account_url\s*=\s*[^\n]+\.(?:blob\.core|documents\.azure|table\.core)\.windows\.net[^\n]*', '# account_url removed — GCS uses project-based auth', 'config'),
+    # BlobServiceClient
     (r'BlobServiceClient\([^)]*\)', 'storage.Client()', 'client'),
     (r'\.get_container_client\(([^)]+)\)', r'.bucket(\1)', 'api'),
     (r'\.get_blob_client\(([^)]+)\)', r'.blob(\1)', 'api'),
@@ -185,6 +199,8 @@ _AZURE_REPLACEMENTS: list[tuple[str, str, str]] = [
     (r'\.download_blob\(\)', '.download_as_bytes()', 'api'),
     (r'\.list_blobs\(([^)]*)\)', r'.list_blobs(prefix=\1)', 'api'),
     (r'\.delete_blob\(\)', '.delete()', 'api'),
+    # ContainerClient
+    (r'ContainerClient\([^)]*\)', 'storage.Client().bucket("default")', 'client'),
     # Cosmos DB
     (r'from azure\.cosmos import .*', 'from google.cloud import firestore', 'import'),
     (r'CosmosClient\([^)]*\)', 'firestore.Client()', 'client'),
@@ -197,6 +213,11 @@ _AZURE_REPLACEMENTS: list[tuple[str, str, str]] = [
     # Identity
     (r'DefaultAzureCredential\(\)', 'google.auth.default()', 'auth'),
     (r'ManagedIdentityCredential\(\)', 'google.auth.default()', 'auth'),
+    # Azure env vars
+    (r'AZURE_STORAGE_CONNECTION_STRING', 'GOOGLE_APPLICATION_CREDENTIALS', 'config'),
+    (r'AZURE_CLIENT_ID', 'GOOGLE_APPLICATION_CREDENTIALS', 'config'),
+    (r'AZURE_TENANT_ID', '# AZURE_TENANT_ID removed — use GCP project ID', 'config'),
+    (r'AZURE_CLIENT_SECRET', '# AZURE_CLIENT_SECRET removed — use Application Default Credentials', 'config'),
 ]
 
 _TF_REPLACEMENTS: list[tuple[str, str, str]] = [
@@ -214,6 +235,47 @@ _TF_REPLACEMENTS: list[tuple[str, str, str]] = [
     (r'billing_mode\s*=\s*"PAY_PER_REQUEST"', 'type = "FIRESTORE_NATIVE"', 'config'),
     (r'hash_key\s*=\s*"([^"]*)"', '# hash_key managed by Firestore', 'config'),
 ]
+
+
+def _has_remaining_source_artifacts(content: str, source_provider: str) -> bool:
+    """Check if code still contains source-provider references after pattern replacement.
+
+    When regex patterns produce a partial result, remaining artifacts indicate
+    the LLM should take over for a complete rewrite.
+    Ignores comments (lines starting with #) to avoid false positives from our
+    replacement comments like '# removed Azure import'.
+    """
+    # Strip comment-only lines so our replacement comments don't trigger false positives.
+    code_lines = [
+        line for line in content.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    code_only = "\n".join(code_lines)
+
+    upper = source_provider.upper()
+    if upper == "AWS":
+        markers = [
+            "boto3", "import boto3", "from boto3",
+            "aws_access_key", "AWS_ACCESS_KEY",
+            "s3_client", "s3_resource",
+            "lambda_client", "sqs_client", "sns_client",
+            "dynamodb",
+        ]
+    elif upper == "AZURE":
+        markers = [
+            "from azure.", "import azure.",
+            "azure.storage", "azure.identity", "azure.cosmos",
+            "azure.keyvault", "azure.servicebus", "azure.functions",
+            "azure.core",
+            "BlobServiceClient", "ContainerClient",
+            "CosmosClient", "SecretClient", "ServiceBusClient",
+            "DefaultAzureCredential", "ManagedIdentityCredential",
+            ".blob.core.windows.net",
+            "UserAgentPolicy",
+        ]
+    else:
+        return False
+    return any(m in code_only for m in markers)
 
 
 def _fast_pattern_refactor(content: str, source_provider: str, file_path: str) -> str | None:
@@ -636,12 +698,20 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
                 logger.warning("[refactor] Pattern error for %s: %s", rel_path, exc, exc_info=True)
 
         # Strategy 3: LLM fallback (full rewrite via Gemini)
-        if modified is None and _is_llm_configured(container):
-            logger.debug("[refactor] Trying LLM for %s...", rel_path)
+        # Fire when: (a) no patterns matched, OR (b) patterns matched but
+        # source-provider artifacts remain (incomplete refactor).
+        needs_llm = modified is None or (
+            modified is not None
+            and _has_remaining_source_artifacts(modified, body.source_provider)
+        )
+        if needs_llm and _is_llm_configured(container):
+            # Feed the partially-refactored code (if any) so LLM can finish the job.
+            llm_input = modified if modified is not None else content
+            logger.debug("[refactor] Trying LLM for %s (partial=%s)...", rel_path, modified is not None)
             try:
                 llm_result = await asyncio.wait_for(
                     _refactor_with_llm(
-                        content, file_path, body.source_provider, body.target_provider, container,
+                        llm_input, file_path, body.source_provider, body.target_provider, container,
                     ),
                     timeout=30.0,
                 )
@@ -652,9 +722,9 @@ async def _refactor_project_stream(body: RefactorProjectRequestBody, container):
                 else:
                     logger.debug("[refactor] LLM returned unchanged for %s", rel_path)
             except asyncio.TimeoutError:
-                logger.warning("[refactor] LLM TIMEOUT for %s", rel_path)
+                logger.warning("[refactor] LLM TIMEOUT for %s — keeping pattern result", rel_path)
             except Exception as exc:
-                logger.warning("[refactor] LLM error for %s: %s", rel_path, exc)
+                logger.warning("[refactor] LLM error for %s: %s — keeping pattern result", rel_path, exc)
         elif modified is None:
             logger.debug("[refactor] No LLM configured, skipping %s", rel_path)
 
